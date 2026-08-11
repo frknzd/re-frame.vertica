@@ -6,3 +6,8 @@
 /target/
 /dist/
 /extension/panel.js
+/extension/edn-worker.js
+/extension/source-map-worker.js
+/release/
+/.venv/
+/pom.xml

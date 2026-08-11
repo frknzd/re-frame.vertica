@@ -1,9 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "re-frame Inspector",
-  "description": "Inspect app-db provenance through subscriptions and Reagent components.",
+  "name": "re-frame.vertica",
+  "description": "Trace a vertical slice from app-db through subscriptions, props, Reagent, and the DOM.",
   "version": "0.1.0",
   "devtools_page": "devtools.html",
   "permissions": []
 }
-

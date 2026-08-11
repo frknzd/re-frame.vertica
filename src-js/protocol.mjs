@@ -14,11 +14,11 @@ export function transitToPlain(value, transitApi) {
 
 export function bridgeExpression(method, argumentExpression = "") {
   const key = JSON.stringify(method);
-  return `(()=>{const b=globalThis.__RE_FRAME_INSPECTOR__;if(!b)return null;const f=b[${key}];if(typeof f!=="function")throw new Error("Bridge method unavailable: "+${key});return f(${argumentExpression});})()`;
+  return `(()=>{const b=globalThis.__RE_FRAME_VERTICA__;if(!b)return null;const f=b[${key}];if(typeof f!=="function")throw new Error("Bridge method unavailable: "+${key});return f(${argumentExpression});})()`;
 }
 
 export function compatibilityMessage(capabilities) {
-  if (!capabilities) return "Preload missing. Add re-frame-inspector.preload before application namespaces and reload the page.";
+  if (!capabilities) return "Preload missing. Add re-frame.vertica.preload before application namespaces and reload the page.";
   if (capabilities.protocol !== PROTOCOL_VERSION) {
     return `Bridge protocol ${capabilities.protocol ?? "unknown"} is incompatible with extension protocol ${PROTOCOL_VERSION}. Upgrade the preload and extension together.`;
   }

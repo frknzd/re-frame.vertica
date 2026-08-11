@@ -1,2 +1,2 @@
-chrome.devtools.panels.create("re-frame Inspector", "", "panel.html");
+chrome.devtools.panels.create("re-frame.vertica", "", "panel.html");
 

@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: DeLaGuardo/setup-clojure@13.4.0
+        with:
+          cli: 1.12.3.1577
+          lein: 2.12.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Read tag version
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must have the form vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+      - run: npm run check:version -- "${{ steps.version.outputs.version }}"
+      - run: npm run verify
+      - run: npm run package:extension -- "${{ steps.version.outputs.version }}"
+      - run: lein pom
+
+      - name: Publish library to Clojars
+        env:
+          CLOJARS_USERNAME: ${{ secrets.CLOJARS_USERNAME }}
+          CLOJARS_PASSWORD: ${{ secrets.CLOJARS_DEPLOY_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if [[ -z "$CLOJARS_USERNAME" || -z "$CLOJARS_PASSWORD" ]]; then
+            echo "CLOJARS_USERNAME and CLOJARS_DEPLOY_TOKEN secrets are required" >&2
+            exit 1
+          fi
+
+          pom_url="https://repo.clojars.org/io/github/frknzd/re-frame.vertica/$VERSION/re-frame.vertica-$VERSION.pom"
+          if curl --fail --silent --location --output /dev/null "$pom_url"; then
+            echo "Clojars already contains $VERSION; skipping immutable deployment."
+          else
+            lein deploy clojars
+          fi
+
+      - name: Create checksums
+        shell: bash
+        run: |
+          cd release
+          sha256sum ./*.zip > SHA256SUMS
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/* \
+              --verify-tag \
+              --generate-notes \
+              --title "re-frame.vertica $GITHUB_REF_NAME"
+          fi

@@ -1,8 +1,8 @@
-(ns re-frame-inspector.registry
+(ns re-frame.vertica.registry
   (:require [re-frame.db :as db]
             [re-frame.registrar :as registrar]
             [re-frame.subs :as subs]
-            [re-frame-inspector.state :as state]))
+            [re-frame.vertica.state :as state]))
 
 (defonce installed? (atom false))
 (defonce original-reg-sub (atom nil))
@@ -17,6 +17,9 @@
 (defn layer-2?
   [{:keys [inputs-fn latest-query latest-dyn]}]
   (identical? db/app-db (invoke-inputs inputs-fn latest-query latest-dyn)))
+
+(defn input-signals [{:keys [inputs-fn]} query-v dyn-v]
+  (invoke-inputs inputs-fn query-v dyn-v))
 
 (defn- instrumented-register [query-id args]
   (let [[inputs-fn computation-fn] (apply subs/sugar query-id subs/subscribe vector? args)

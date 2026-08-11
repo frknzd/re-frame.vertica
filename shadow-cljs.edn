@@ -4,7 +4,7 @@
   {:target :browser
    :output-dir "dist/preload"
    :asset-path "."
-   :modules {:preload {:entries [re-frame-inspector.preload]}}
+   :modules {:preload {:entries [re-frame.vertica.preload]}}
    :compiler-options {:source-map true}}
 
   :test
@@ -17,14 +17,14 @@
   {:target :browser
    :output-dir "dist/fixtures/react17/js"
    :asset-path "js"
-   :modules {:fixture {:entries [re-frame-inspector.fixture]}}
+   :modules {:fixture {:entries [re-frame.vertica.fixture]}}
    :js-options {:resolve {"react" {:target :npm :require "react17"}
                           "react-dom" {:target :npm :require "react-dom17"}}}
-   :devtools {:preloads [re-frame-inspector.preload]}}
+   :devtools {:preloads [re-frame.vertica.preload]}}
 
   :fixture-react18
   {:target :browser
    :output-dir "dist/fixtures/react18/js"
    :asset-path "js"
-   :modules {:fixture {:entries [re-frame-inspector.fixture]}}
-   :devtools {:preloads [re-frame-inspector.preload]}}}}
+   :modules {:fixture {:entries [re-frame.vertica.fixture]}}
+   :devtools {:preloads [re-frame.vertica.preload]}}}}

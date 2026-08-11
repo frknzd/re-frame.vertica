@@ -1,8 +1,8 @@
-(ns re-frame-inspector.fixture
+(ns re-frame.vertica.fixture
   (:require [re-frame.core :as rf]
             [reagent.core :as r]
             [reagent.dom :as rdom]
-            [re-frame-inspector.preload]))
+            [re-frame.vertica.preload]))
 
 (rf/reg-event-db ::initialize
   (fn [_ _]
@@ -39,7 +39,7 @@
 (defn app []
   (let [selected @(rf/subscribe [::selected-id])]
     [:main
-     [:h1 "re-frame Inspector fixture"]
+     [:h1 "re-frame.vertica fixture"]
      [:nav
       (for [id [1 2]]
         ^{:key id}

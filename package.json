@@ -1,8 +1,18 @@
 {
-  "name": "re-frame-inspector",
+  "name": "re-frame.vertica",
   "version": "0.1.0",
   "private": true,
-  "description": "re-frame Inspector Chrome DevTools extension and application preload",
+  "description": "A Chrome DevTools vertical slice through re-frame data flow",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frknzd/re-frame.vertica.git"
+  },
+  "homepage": "https://github.com/frknzd/re-frame.vertica#readme",
+  "bugs": "https://github.com/frknzd/re-frame.vertica/issues",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "npm run test:cljs && npm run test:extension",
     "test:jvm": "lein test",
@@ -12,7 +22,12 @@
     "build:preload": "shadow-cljs release preload",
     "build:fixtures": "shadow-cljs release fixture-react17 fixture-react18 && node scripts/build-fixtures.mjs",
     "build": "node scripts/clean.mjs && npm run build:panel && npm run build:preload && npm run build:fixtures",
-    "verify": "npm run test:jvm && npm test && npm run build"
+    "verify": "npm run test:jvm && npm test && npm run build",
+    "check:version": "node scripts/check-version.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
+    "release:patch": "bump-my-version bump patch",
+    "release:minor": "bump-my-version bump minor",
+    "release:major": "bump-my-version bump major"
   },
   "devDependencies": {
     "esbuild": "0.25.8",
