@@ -14,18 +14,18 @@ Two matching pieces are required: the preload library runs inside the applicatio
 
 ### 1. Add the preload to the application
 
-With `deps.edn`, add the released [Clojars artifact](https://clojars.org/io.github.frknzd/re-frame.vertica):
+With `deps.edn`, add the released [Clojars artifact](https://clojars.org/net.clojars.frknzd/re-frame.vertica):
 
 ```clojure
 {:deps
- {io.github.frknzd/re-frame.vertica {:mvn/version "0.1.1"}}}
+ {net.clojars.frknzd/re-frame.vertica {:mvn/version "0.1.1"}}}
 ```
 
 For a shadow-cljs configuration that declares Maven dependencies directly:
 
 ```clojure
 {:dependencies
- [[io.github.frknzd/re-frame.vertica "0.1.1"]]}
+ [[net.clojars.frknzd/re-frame.vertica "0.1.1"]]}
 ```
 
 Then add the public preload namespace to the development build:

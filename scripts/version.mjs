@@ -30,7 +30,7 @@ export async function readVersions() {
     "extension/manifest.json": manifest.version,
     "project.clj": matchVersion(
       project,
-      /\(defproject\s+io\.github\.frknzd\/re-frame\.vertica\s+"([^"]+)"/,
+      /\(defproject\s+net\.clojars\.frknzd\/re-frame\.vertica\s+"([^"]+)"/,
       "project.clj"
     ),
     ".bumpversion.toml": matchVersion(

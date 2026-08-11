@@ -34,15 +34,15 @@ replace = '"version": "{new_version}"'
 
 [[tool.bumpversion.files]]
 filename = "project.clj"
-search = '(defproject io.github.frknzd/re-frame.vertica "{current_version}"'
-replace = '(defproject io.github.frknzd/re-frame.vertica "{new_version}"'
+search = '(defproject net.clojars.frknzd/re-frame.vertica "{current_version}"'
+replace = '(defproject net.clojars.frknzd/re-frame.vertica "{new_version}"'
 
 [[tool.bumpversion.files]]
 filename = "README.md"
-search = 'io.github.frknzd/re-frame.vertica {{:mvn/version "{current_version}"}}'
-replace = 'io.github.frknzd/re-frame.vertica {{:mvn/version "{new_version}"}}'
+search = 'net.clojars.frknzd/re-frame.vertica {{:mvn/version "{current_version}"}}'
+replace = 'net.clojars.frknzd/re-frame.vertica {{:mvn/version "{new_version}"}}'
 
 [[tool.bumpversion.files]]
 filename = "README.md"
-search = '[io.github.frknzd/re-frame.vertica "{current_version}"]'
-replace = '[io.github.frknzd/re-frame.vertica "{new_version}"]'
+search = '[net.clojars.frknzd/re-frame.vertica "{current_version}"]'
+replace = '[net.clojars.frknzd/re-frame.vertica "{new_version}"]'

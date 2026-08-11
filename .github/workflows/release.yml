@@ -64,7 +64,7 @@ jobs:
             exit 1
           fi
 
-          pom_url="https://repo.clojars.org/io/github/frknzd/re-frame.vertica/$VERSION/re-frame.vertica-$VERSION.pom"
+          pom_url="https://repo.clojars.org/net/clojars/frknzd/re-frame.vertica/$VERSION/re-frame.vertica-$VERSION.pom"
           if curl --fail --silent --location --output /dev/null "$pom_url"; then
             echo "Clojars already contains $VERSION; skipping immutable deployment."
           else
