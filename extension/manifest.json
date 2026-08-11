@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "re-frame.vertica",
   "description": "Trace a vertical slice from app-db through subscriptions, props, Reagent, and the DOM.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "devtools_page": "devtools.html",
   "permissions": []
 }

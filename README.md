@@ -18,14 +18,14 @@ With `deps.edn`, add the released [Clojars artifact](https://clojars.org/net.clo
 
 ```clojure
 {:deps
- {net.clojars.frknzd/re-frame.vertica {:mvn/version "0.1.1"}}}
+ {net.clojars.frknzd/re-frame.vertica {:mvn/version "0.1.2"}}}
 ```
 
 For a shadow-cljs configuration that declares Maven dependencies directly:
 
 ```clojure
 {:dependencies
- [[net.clojars.frknzd/re-frame.vertica "0.1.1"]]}
+ [[net.clojars.frknzd/re-frame.vertica "0.1.2"]]}
 ```
 
 Then add the public preload namespace to the development build:

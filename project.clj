@@ -1,4 +1,4 @@
-(defproject net.clojars.frknzd/re-frame.vertica "0.1.1"
+(defproject net.clojars.frknzd/re-frame.vertica "0.1.2"
   :description "A Chrome DevTools vertical slice through re-frame data flow"
   :url "https://github.com/frknzd/re-frame.vertica"
   :license {:name "MIT"
