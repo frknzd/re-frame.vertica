@@ -1,0 +1,26 @@
+{
+  "name": "re-frame-inspector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "re-frame Inspector Chrome DevTools extension and application preload",
+  "scripts": {
+    "test": "npm run test:cljs && npm run test:extension",
+    "test:jvm": "lein test",
+    "test:cljs": "shadow-cljs compile test",
+    "test:extension": "node --test test-js/*.test.mjs",
+    "build:panel": "node scripts/build-extension.mjs",
+    "build:preload": "shadow-cljs release preload",
+    "build:fixtures": "shadow-cljs release fixture-react17 fixture-react18 && node scripts/build-fixtures.mjs",
+    "build": "node scripts/clean.mjs && npm run build:panel && npm run build:preload && npm run build:fixtures",
+    "verify": "npm run test:jvm && npm test && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.8",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react17": "npm:react@17.0.2",
+    "react-dom17": "npm:react-dom@17.0.2",
+    "shadow-cljs": "3.1.7",
+    "transit-js": "0.8.874"
+  }
+}

@@ -1,0 +1,8 @@
+/.shadow-cljs/
+/.cpcache/
+/.lein-*/
+/.lein-failures
+/node_modules/
+/target/
+/dist/
+/extension/panel.js
