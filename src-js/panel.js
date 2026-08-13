@@ -1,7 +1,14 @@
 import * as transit from "transit-js";
 import { bridgeExpression, compatibilityMessage, PROTOCOL_VERSION, transitToPlain } from "./protocol.mjs";
 import { ednTokens } from "./edn-tokenizer.mjs";
-import { appDbPathMatches, buildComponentAssociations, buildSections, leafMostComponents } from "./graph-layout.mjs";
+import {
+  appDbPathMatches,
+  buildComponentAssociations,
+  buildSections,
+  dbCollectionStartsCollapsed,
+  groupDbVectorEntries,
+  leafMostComponents
+} from "./graph-layout.mjs";
 
 const reader = transit.reader("json");
 const statusEl = document.querySelector("#status");
@@ -10,15 +17,18 @@ const graphEl = document.querySelector("#graph");
 const pickButton = document.querySelector("#pick");
 const refreshButton = document.querySelector("#refresh");
 const componentBoxesButton = document.querySelector("#component-boxes");
+const openSourceButton = document.querySelector("#open-source");
 const navigationButtons = [...document.querySelectorAll("#tree-nav [data-direction]")];
 let graph = null;
 let revision = -1;
 let collapsedNodes = new Set();
 let collapsedDbPaths = new Set();
+let expandedDefaultDbPaths = new Set();
 let collapsedSubscriptionLevels = new Set();
 let knownSubscriptionLevels = new Set();
 let subscriptionLevelsInitialized = false;
 let subscriptionSelectionId = null;
+let dbSelectionGeneration = null;
 let expandedValues = new Map();
 let expandedDbValues = new Map();
 let lastSelection = null;
@@ -36,14 +46,20 @@ let sourceResourcesLoading = null;
 const WORKER_TOKEN_THRESHOLD = 8000;
 const POLL_INTERVAL = 150;
 const COMPONENT_BOXES_SETTING = "re-frame.vertica.component-boxes";
+const SELECT_ELEMENT_MESSAGE = "Select an element in Elements or use Pick.";
+const MISSING_PRELOAD_MESSAGE = "This app may be missing re-frame.vertica.preload. Add it to the development build, restart the build, and reload the page.";
 let evalTail = Promise.resolve();
 let pollTimer = null;
+let bridgeReady = false;
+let connectionRunning = false;
 let selectionRefreshRunning = false;
 let selectionRefreshQueued = false;
 let navigationRunning = false;
 let refreshRunning = false;
 let componentAssociations = new Map();
 let appDbAssociationPatterns = [];
+let selectedSourceLocation = null;
+let sourceLocationGeneration = 0;
 
 function componentBoxesPreference() {
   return localStorage.getItem(COMPONENT_BOXES_SETTING) !== "false";
@@ -52,6 +68,29 @@ function componentBoxesPreference() {
 function updateComponentBoxesButton(enabled) {
   componentBoxesButton.setAttribute("aria-pressed", String(enabled));
   componentBoxesButton.title = enabled ? "Hide Reagent component boxes" : "Show Reagent component boxes";
+}
+
+function updateBridgeState(ready, message = "") {
+  bridgeReady = ready;
+  document.body.classList.toggle("preload-missing", !ready);
+  pickButton.disabled = !ready;
+  componentBoxesButton.disabled = !ready;
+  refreshButton.disabled = !ready || refreshRunning;
+  if (!ready) {
+    graph = null;
+    revision = -1;
+    dbSelectionGeneration = null;
+    resetAppDbViewState();
+    graphEl.replaceChildren();
+    emptyEl.hidden = false;
+    emptyEl.textContent = MISSING_PRELOAD_MESSAGE;
+    updateSourceButton(null);
+  } else if (!graph) {
+    emptyEl.hidden = false;
+    emptyEl.textContent = SELECT_ELEMENT_MESSAGE;
+  }
+  if (message) statusEl.textContent = message;
+  updateNavigation(graph?.navigation);
 }
 
 function inspectedEval(expression) {
@@ -208,6 +247,46 @@ async function resolveVisibleArgumentNames() {
   }
 }
 
+function sourceBasename(url) {
+  const path = String(url || "").split(/[?#]/, 1)[0];
+  try { return decodeURIComponent(path.slice(path.lastIndexOf("/") + 1)); }
+  catch (_) { return path.slice(path.lastIndexOf("/") + 1); }
+}
+
+function updateSourceButton(location) {
+  selectedSourceLocation = location;
+  openSourceButton.hidden = !location;
+  if (!location) return;
+  const label = `${sourceBasename(location.url)}:${location.line}`;
+  openSourceButton.textContent = `↗ ${label}`;
+  openSourceButton.title = `Open ${location.componentName} at ${location.url}:${location.line}:${location.column}`;
+  openSourceButton.setAttribute("aria-label", openSourceButton.title);
+}
+
+async function resolveSelectionSourceLocation() {
+  const generation = ++sourceLocationGeneration;
+  if (!sourceResourcesReady || !graph) {
+    updateSourceButton(null);
+    return;
+  }
+  const components = leafMostComponents(
+    (graph.nodes || []).filter(node => node.kind === "component"),
+    graph.edges || []
+  );
+  const requests = components.map(component => ({ componentName: component.label }));
+  if (!requests.length) {
+    updateSourceButton(null);
+    return;
+  }
+  updateSourceButton(null);
+  try {
+    const response = await sourceWorkerRequest({ type: "resolve-location", requests });
+    if (generation === sourceLocationGeneration) updateSourceButton(response.location || null);
+  } catch (_) {
+    if (generation === sourceLocationGeneration) updateSourceButton(null);
+  }
+}
+
 function sourceResourceUrl(resource) {
   return resource?.url || resource?.request?.url || "";
 }
@@ -263,6 +342,7 @@ function loadSourceResources() {
     pendingArgumentLookups.clear();
     sourceResourcesReady = true;
     await resolveVisibleArgumentNames();
+    await resolveSelectionSourceLocation();
   })().finally(() => { sourceResourcesLoading = null; });
   return sourceResourcesLoading;
 }
@@ -284,11 +364,18 @@ function ednCode(className, text) {
   return code;
 }
 
-function renderComponentBadges(components = []) {
+function renderComponentBadges(components = [], compact = false) {
   const leaves = leafMostComponents(components, graph?.edges || []);
   if (!leaves.length) return null;
-  const badges = element("span", "component-badges");
+  const badges = element("span", `component-badges${compact ? " compact-component-badges" : ""}`);
   badges.setAttribute("aria-label", `Leaf Reagent component: ${leaves.map(component => component.label).join("; ")}`);
+  if (compact) {
+    const labels = leaves.map(component => component.label || "Anonymous component");
+    const badge = element("span", "component-badge compact-component-badge", leaves.length === 1 ? "C" : `C×${leaves.length}`);
+    badge.title = `Reagent component${leaves.length === 1 ? "" : "s"}: ${labels.join("; ")}`;
+    badges.append(badge);
+    return badges;
+  }
   leaves.forEach(component => {
     const badge = element("span", "component-badge", component.label || "Anonymous component");
     badge.title = `Reagent component: ${component.label}`;
@@ -408,6 +495,28 @@ function isDbCollection(node) {
   return node && ["map", "vector", "set"].includes(node.kind);
 }
 
+function dbNodeCollapsed(node, path) {
+  return collapsedDbPaths.has(path) ||
+    (dbCollectionStartsCollapsed(node) && !expandedDefaultDbPaths.has(path));
+}
+
+function resetAppDbViewState() {
+  collapsedDbPaths.clear();
+  expandedDefaultDbPaths.clear();
+  expandedDbValues.clear();
+}
+
+function toggleDbNode(path, collapsed) {
+  if (collapsed) {
+    collapsedDbPaths.delete(path);
+    expandedDefaultDbPaths.add(path);
+  } else {
+    expandedDefaultDbPaths.delete(path);
+    collapsedDbPaths.add(path);
+  }
+  render(graph, { preserveScroll: true });
+}
+
 function renderDbValue(text, path, className = "") {
   const value = element("span", `db-tree-value ${className}`.trim());
   value.append(ednCode("db-tree-code", text));
@@ -421,12 +530,12 @@ function replaceDbBranch(node, path, replacement) {
   return node;
 }
 
-async function loadMoreDbContext(button, path) {
+async function loadMoreDbContext(button, path, visibleCount = 0) {
   if (button.classList.contains("loading")) return;
   button.classList.add("loading");
   button.disabled = true;
   try {
-    const result = await call("expandAppDbPath", JSON.stringify(path));
+    const result = await call("expandAppDbPath", `${JSON.stringify(path)},${Number(visibleCount) || 0}`);
     if (!result?.ok) throw new Error(result?.error || "Unable to load more app-db context");
     graph["app-db-tree"] = replaceDbBranch(graph["app-db-tree"], path, result.node);
     render(graph, { preserveScroll: true });
@@ -458,10 +567,39 @@ async function toggleFullDbValue(button, node, path, showingFullValue) {
   }
 }
 
+function renderCompactDbVectorEntry(node, key) {
+  const path = node?.["path-label"] || "[]";
+  const entry = element("div", `db-vector-entry ${dbNodeState(node)}`);
+  const pathTitle = `app-db ${path}`;
+  entry.title = pathTitle;
+
+  const keyCode = ednCode("db-tree-code db-tree-key db-vector-key", key);
+  keyCode.dataset.path = path;
+  keyCode.title = pathTitle;
+  entry.append(keyCode);
+
+  const fullDbValue = expandedDbValues.get(path);
+  const showingFullDbValue = fullDbValue != null;
+  entry.append(renderDbValue(showingFullDbValue ? fullDbValue : (node.text || "nil"), path,
+                             `leaf-value${showingFullDbValue ? " expanded" : ""}`));
+  if (node["preview-truncated?"]) {
+    const more = element("button", "db-value-more", showingFullDbValue ? "Less" : "All");
+    more.type = "button";
+    more.title = showingFullDbValue ? `Collapse app-db value ${path}` : `Show complete app-db value ${path}`;
+    more.setAttribute("aria-label", more.title);
+    more.addEventListener("click", () => toggleFullDbValue(more, node, path, showingFullDbValue));
+    entry.append(more);
+  }
+  const badges = renderComponentBadges(componentsForDbNode(node), true);
+  if (badges) entry.append(badges);
+  return entry;
+}
+
 function renderDbNode(node, key = null, depth = 0) {
   const path = node?.["path-label"] || "[]";
   const collection = isDbCollection(node);
-  const collapsed = collection && collapsedDbPaths.has(path);
+  const collapsed = collection && dbNodeCollapsed(node, path);
+  const defaultCollapsed = collection && dbCollectionStartsCollapsed(node);
   const branch = element("div", `db-tree-node ${dbNodeState(node)}${collapsed ? " collapsed" : ""}`);
   const line = element("div", "db-tree-line");
   line.style.setProperty("--db-depth", depth);
@@ -471,7 +609,7 @@ function renderDbNode(node, key = null, depth = 0) {
     const more = element("button", "db-tree-more", node.text || "… more");
     more.type = "button";
     more.title = `Load more entries from ${path}`;
-    more.addEventListener("click", () => loadMoreDbContext(more, path));
+    more.addEventListener("click", () => loadMoreDbContext(more, path, node["visible-count"]));
     line.append(more);
     branch.append(line);
     return branch;
@@ -482,10 +620,7 @@ function renderDbNode(node, key = null, depth = 0) {
     toggle.type = "button";
     toggle.title = collapsed ? `Expand ${path}` : `Collapse ${path}`;
     toggle.setAttribute("aria-label", toggle.title);
-    toggle.addEventListener("click", () => {
-      if (collapsed) collapsedDbPaths.delete(path); else collapsedDbPaths.add(path);
-      render(graph, { preserveScroll: true });
-    });
+    toggle.addEventListener("click", () => toggleDbNode(path, collapsed));
     line.append(toggle);
   } else {
     line.append(element("span", "db-tree-toggle-spacer"));
@@ -501,8 +636,9 @@ function renderDbNode(node, key = null, depth = 0) {
   if (node.kind === "summary") {
     const summary = element("button", "db-tree-summary", node.text || "…");
     summary.type = "button";
-    summary.title = `Expand app-db collection ${path}`;
-    summary.addEventListener("click", () => loadMoreDbContext(summary, path));
+    summary.title = `Load entries from ${path}`;
+    summary.setAttribute("aria-label", summary.title);
+    summary.addEventListener("click", () => loadMoreDbContext(summary, path, 0));
     line.append(summary);
   } else {
     const fullDbValue = expandedDbValues.get(path);
@@ -518,13 +654,13 @@ function renderDbNode(node, key = null, depth = 0) {
     }
   }
   if (collection && collapsed) {
-    const collapsedMark = element("button", "db-tree-collapsed-mark", "…");
+    const collapsedText = defaultCollapsed ? `… ${node["child-count"]} involved` : "…";
+    const collapsedMark = element("button", "db-tree-collapsed-mark", collapsedText);
     collapsedMark.type = "button";
-    collapsedMark.title = `Expand ${path}`;
-    collapsedMark.addEventListener("click", () => {
-      collapsedDbPaths.delete(path);
-      render(graph, { preserveScroll: true });
-    });
+    collapsedMark.title = defaultCollapsed
+      ? `Expand ${path}; all ${node["child-count"]} entries contribute`
+      : `Expand ${path}`;
+    collapsedMark.addEventListener("click", () => toggleDbNode(path, true));
     line.append(collapsedMark);
   }
   const badges = renderComponentBadges(componentsForDbNode(node));
@@ -533,7 +669,22 @@ function renderDbNode(node, key = null, depth = 0) {
 
   if (collection && !collapsed) {
     const children = element("div", "db-tree-children");
-    for (const entry of node.children || []) children.append(renderDbNode(entry.node, entry.key, depth + 1));
+    if (node.kind === "vector") {
+      for (const group of groupDbVectorEntries(node.children || [])) {
+        if (group.layout === "compact") {
+          const compactEntries = element("div", "db-vector-entries");
+          compactEntries.style.setProperty("--db-depth", depth + 1);
+          for (const entry of group.entries) {
+            compactEntries.append(renderCompactDbVectorEntry(entry.node, entry.key));
+          }
+          children.append(compactEntries);
+        } else {
+          for (const entry of group.entries) children.append(renderDbNode(entry.node, entry.key, depth + 1));
+        }
+      }
+    } else {
+      for (const entry of node.children || []) children.append(renderDbNode(entry.node, entry.key, depth + 1));
+    }
     branch.append(children);
     const closeLine = element("div", "db-tree-line db-tree-close");
     closeLine.style.setProperty("--db-depth", depth);
@@ -545,7 +696,7 @@ function renderDbNode(node, key = null, depth = 0) {
 }
 
 function renderAppDbSection(section, appDbTree) {
-  const container = element("section", "graph-section app-db-path db-tree-section");
+  const container = element("section", `graph-section ${section.kind} db-tree-section`);
   const header = element("header", "section-header");
   const heading = element("h2", "section-title", section.title);
   heading.append(element("span", "section-count", String(section.nodes.length)));
@@ -559,8 +710,8 @@ function renderAppDbSection(section, appDbTree) {
   return container;
 }
 
-function renderSection(section, appDbTree) {
-  if (section.kind === "app-db-path") return renderAppDbSection(section, appDbTree);
+function renderSection(section, snapshot) {
+  if (section.kind === "app-db-path") return renderAppDbSection(section, snapshot?.["app-db-tree"]);
   const container = element("section", `graph-section ${section.kind}${section.value ? " has-values" : " single-column"}`);
   const header = element("header", "section-header");
   const heading = element("h2", "section-title", section.title);
@@ -643,6 +794,11 @@ function render(nextGraph, { preserveScroll = false } = {}) {
     .filter(node => node.kind === "app-db-path" && componentAssociations.has(node.id))
     .map(node => ({ path: node["association-path"], components: componentAssociations.get(node.id) }));
   const selected = nextGraph?.selection?.label;
+  const nextDbSelectionGeneration = Number(nextGraph?.["selection-generation"]);
+  if (Number.isFinite(nextDbSelectionGeneration) && nextDbSelectionGeneration !== dbSelectionGeneration) {
+    resetAppDbViewState();
+    dbSelectionGeneration = nextDbSelectionGeneration;
+  }
   updateNavigation(nextGraph?.navigation);
   const hasSelection = Boolean(selected || nodes.some(node => node.kind === "element" && node.label !== "No element"));
   emptyEl.hidden = hasSelection;
@@ -652,7 +808,7 @@ function render(nextGraph, { preserveScroll = false } = {}) {
 
   graphEl.replaceChildren();
   for (const section of sections) {
-    graphEl.append(renderSection(section, nextGraph?.["app-db-tree"]));
+    graphEl.append(renderSection(section, nextGraph));
   }
 
   const warnings = nextGraph?.warnings || [];
@@ -661,13 +817,13 @@ function render(nextGraph, { preserveScroll = false } = {}) {
   else if (selected !== lastSelection) canvas.scrollTo({ top: 0, left: 0 });
   lastSelection = selected;
   void resolveVisibleArgumentNames();
+  void resolveSelectionSourceLocation();
 }
 
 function renderSnapshot(nextGraph, options) {
   if (!nextGraph) return;
   const nextRevision = Number(nextGraph.revision);
   if (Number.isFinite(nextRevision) && nextRevision < revision) return;
-  expandedDbValues.clear();
   render(nextGraph, options);
   if (Number.isFinite(nextRevision)) revision = nextRevision;
 }
@@ -676,7 +832,7 @@ function showError(error) { statusEl.textContent = error.message; }
 
 function updateNavigation(navigation = {}) {
   for (const button of navigationButtons) {
-    button.disabled = navigationRunning || !navigation[button.dataset.direction];
+    button.disabled = !bridgeReady || navigationRunning || !navigation[button.dataset.direction];
   }
 }
 
@@ -700,15 +856,27 @@ async function navigateSelected(direction) {
 }
 
 async function connect() {
+  if (connectionRunning) return;
+  connectionRunning = true;
   try {
     const capabilities = await call("capabilities");
-    statusEl.textContent = compatibilityMessage(capabilities);
-    if (!capabilities || capabilities.protocol !== PROTOCOL_VERSION) return;
+    const message = compatibilityMessage(capabilities);
+    if (!capabilities || capabilities.protocol !== PROTOCOL_VERSION) {
+      updateBridgeState(false, message);
+      return;
+    }
+    const cleared = await call("selectElement", "null");
+    const clearedRevision = Number(cleared?.revision);
+    if (Number.isFinite(clearedRevision)) revision = clearedRevision;
+    updateBridgeState(true, message);
     void loadSourceResources();
     const boxesStatus = await call("setComponentHighlights", String(componentBoxesPreference()));
-    updateComponentBoxesButton(Boolean(boxesStatus["component-highlights"]));
-    await selectElementsNode();
-  } catch (error) { showError(error); }
+    if (boxesStatus) updateComponentBoxesButton(Boolean(boxesStatus["component-highlights"]));
+  } catch (error) {
+    updateBridgeState(false, error.message);
+  } finally {
+    connectionRunning = false;
+  }
 }
 
 async function selectElementsNode() {
@@ -756,7 +924,7 @@ chrome.devtools.inspectedWindow.onResourceAdded.addListener(resource => {
     argumentNameCache.clear();
     pendingArgumentLookups.clear();
     sourceResourcesReady = true;
-    return resolveVisibleArgumentNames();
+    return Promise.all([resolveVisibleArgumentNames(), resolveSelectionSourceLocation()]);
   }).catch(() => undefined);
 });
 chrome.devtools.network.onRequestFinished.addListener(request => {
@@ -765,12 +933,13 @@ chrome.devtools.network.onRequestFinished.addListener(request => {
     argumentNameCache.clear();
     pendingArgumentLookups.clear();
     sourceResourcesReady = true;
-    return resolveVisibleArgumentNames();
+    return Promise.all([resolveVisibleArgumentNames(), resolveSelectionSourceLocation()]);
   }).catch(() => undefined);
 });
 chrome.devtools.network.onNavigated.addListener(() => {
   argumentNameCache.clear();
   pendingArgumentLookups.clear();
+  updateBridgeState(false, "Waiting for re-frame.vertica preload…");
 });
 for (const button of navigationButtons) {
   button.addEventListener("click", () => navigateSelected(button.dataset.direction));
@@ -778,18 +947,31 @@ for (const button of navigationButtons) {
 updateNavigation();
 updateComponentBoxesButton(componentBoxesPreference());
 refreshButton.addEventListener("click", refreshInspector);
+openSourceButton.addEventListener("click", () => {
+  const location = selectedSourceLocation;
+  if (!location) return;
+  chrome.devtools.panels.openResource(
+    location.url,
+    Math.max(0, Number(location.line) - 1),
+    Math.max(0, Number(location.column) - 1),
+    () => {
+      if (chrome.runtime.lastError) showError(new Error(chrome.runtime.lastError.message));
+    }
+  );
+});
 componentBoxesButton.addEventListener("click", async () => {
   const enabled = componentBoxesButton.getAttribute("aria-pressed") !== "true";
   localStorage.setItem(COMPONENT_BOXES_SETTING, String(enabled));
   updateComponentBoxesButton(enabled);
   try {
     const status = await call("setComponentHighlights", String(enabled));
-    updateComponentBoxesButton(Boolean(status["component-highlights"]));
+    if (status) updateComponentBoxesButton(Boolean(status["component-highlights"]));
   } catch (error) { showError(error); }
 });
 pickButton.addEventListener("click", async () => {
   try {
     const status = await call(pickButton.dataset.active === "true" ? "stopPicker" : "startPicker");
+    if (!status) throw new Error("The inspected page is still loading; try Pick again.");
     pickButton.dataset.active = String(status["picker-active"]);
     pickButton.textContent = status["picker-active"] ? "× Cancel" : "⌖ Pick";
     updateComponentBoxesButton(Boolean(status["component-highlights"]));
@@ -799,7 +981,15 @@ pickButton.addEventListener("click", async () => {
 
 async function poll() {
   try {
+    if (!bridgeReady) {
+      await connect();
+      return;
+    }
     const status = await call("status");
+    if (!status) {
+      updateBridgeState(false, compatibilityMessage(null));
+      return;
+    }
     pickButton.dataset.active = String(status["picker-active"]);
     pickButton.textContent = status["picker-active"] ? "× Cancel" : "⌖ Pick";
     updateComponentBoxesButton(Boolean(status["component-highlights"]));

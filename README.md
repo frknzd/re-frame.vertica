@@ -55,21 +55,27 @@ To upgrade, download and extract the new ZIP over the directory (or select a new
 
 Select an element in Chrome's Elements panel, or use **Pick** in the re-frame.vertica top bar. The panel locks onto the closest Reagent render owner and shows its app-db paths, subscriptions, live props, component ownership, and selected DOM element.
 
+Opening the panel does not reuse an old Elements selection or draw its blue highlight; inspection begins with the next explicit Elements selection or Pick action. If the inspected page does not expose `globalThis.__RE_FRAME_VERTICA__`, the panel warns that the development build may be missing the preload and keeps retrying while the page reloads.
+
+When a loaded ClojureScript source map contains the selected component's source, the top bar shows a `↗ file.cljs:line` link. It opens the definition at the exact line and column using Chrome DevTools' configured resource handler, falling back to the Sources editor.
+
 The top bar also provides parent, child, and sibling navigation; a refresh action; and a persistent setting for purple Reagent component boxes. Pick mode accepts Reagent roots only and suppresses page clicks while active. The selected element keeps its blue page highlight while the DevTools panel is open.
 
-All truncation indicators are interactive. Click `{…}`, `[…]`, `… N more`, or **… Show all** to reveal additional data. Subscription levels are collapsible; level 0 starts open and deeper levels start closed for each selection.
+Value-preview truncation indicators are interactive; click **… Show all** to reveal the complete value. Subscription levels are collapsible; level 0 starts open and deeper levels start closed for each selection.
 
 ## What is traced
 
-The selected leaf component's direct subscriptions are exact render dependencies. An ancestor subscription is included only when its output shares an immutable collection identity with a leaf argument or one of its nested collections. Primitive value equality is not treated as provenance.
+The selected leaf component's direct subscriptions are render candidates. An ancestor subscription is included only when its output shares an immutable collection identity with a leaf argument or one of its nested collections. Primitive value equality is not treated as provenance.
 
-Relevant layer-2 subscriptions are replayed against read-tracking wrappers. The tracker records concrete keyword, map, vector, set, record, sequence, reduction, destructuring, `get`, and `get-in` accesses made by the current invocation. Only proven app-db paths are highlighted; their structural ancestors remain visible so the paths can be navigated. New snapshots do not synthesize wildcard paths.
+Relevant layer-2 subscriptions are first replayed against read-tracking wrappers to discover concrete keyword, map, vector, set, record, sequence, reduction, destructuring, `get`, and `get-in` candidates. Each candidate is then perturbed independently in a cloned app-db, the affected subscription DAG is replayed, and the selected component's render closure is evaluated without committing React work. A path is confirmed only when the normalized visible Hiccup/React branch corresponding to the selected DOM element changes. Callback and ref identities are ignored, so newly allocated closures do not create false positives.
+
+The APP-DB tree contains contributing paths and only the structural ancestors needed to reach them—no neighboring entries or unrelated context is added automatically. All paths use the same presentation. Scalar vector entries use a compact, wrapping index/value view while nested collections remain expandable. Whole-collection and all-entry traversals are loaded ten entries at a time; collection summaries and **… more** controls can be used repeatedly to drill into nested values. When a map, vector, or set has more than five entries and every direct entry contributes, it starts collapsed with its contributing entry count and can be expanded normally. The tree has no inspector-imposed depth, path-count, node-count, or edge-count limit. Because counterfactual fuzzing is finite, it establishes evidence for the current execution path rather than a mathematical proof over every possible application state.
 
 Prop names are never shortened. When an inspected script's source map contains ClojureScript `sourcesContent`, re-frame.vertica recovers the component's original argument names, including destructuring and matching multi-arity signatures. If source text is unavailable, the panel keeps complete fallback labels such as `arg 0` instead of guessing.
 
 Subscription and app-db badges show the full leaf Reagent component name responsible for that dependency. Shared dependencies can therefore show more than one leaf badge without conflating their parent chains.
 
-The trace can be partial when data is transformed into a new object, comes from a local ratom, was registered before the preload, or passes through unsupported `reg-sub-raw`, Subscription alpha, disposed reactions, mutations, unfamiliar fibers, or closed shadow roots. Proven paths survive an unsupported read or replay exception and are labeled partial rather than broadened by a guess.
+Some paths cannot be fully verified when data is transformed into a new object, was registered before the preload, or passes through unsupported `reg-sub-raw`, Subscription alpha, opaque custom derefables, disposed reactions, mutations, nondeterministic/throwing renders, unfamiliar fibers, or closed shadow roots. They remain in APP-DB with the same presentation as other contributing paths.
 
 ## Tested compatibility
 
@@ -95,7 +101,7 @@ React 17 and React 18 each have a separately compiled fixture. Other dependency 
 
 The preload exposes `globalThis.__RE_FRAME_VERTICA__` using protocol version `1`. Communication stays between the inspected page and the local DevTools extension. No application data is sent to a service by this project.
 
-Snapshots are bounded to 300 nodes and 600 edges. Values, reactions, fibers, and DOM objects remain inside the inspected page and are accessed through snapshot-scoped opaque tokens. A protocol mismatch is rejected with an upgrade message, which is why the preload and extension versions should stay aligned.
+Snapshots are not quantity-capped, so selecting a component backed by an exceptionally large dependency set can take significant time and memory. Values, reactions, fibers, and DOM objects remain inside the inspected page and are accessed through snapshot-scoped opaque tokens. Counterfactual app-db values never replace the live app-db, and temporarily substituted subscription and argv fields are restored in `finally`. A protocol mismatch is rejected with an upgrade message, which is why the preload and extension versions should stay aligned.
 
 ## Develop and verify
 

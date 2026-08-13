@@ -70,6 +70,12 @@ function formText(source, form) {
   return source.slice(form.start, form.end).replace(/\s+/g, " ").trim();
 }
 
+function sourcePosition(source, offset) {
+  const before = source.slice(0, offset);
+  const lines = before.split("\n");
+  return { line: lines.length, column: lines[lines.length - 1].length + 1 };
+}
+
 function definitionNameIndex(children, start = 1) {
   let metadataPending = false;
   for (let index = start; index < children.length; index += 1) {
@@ -164,7 +170,7 @@ function namespaceName(root) {
   return null;
 }
 
-export function indexClojureScriptSource(source, index = new Map()) {
+export function indexClojureScriptSource(source, index = new Map(), url = "") {
   const root = parseForms(source);
   const namespace = namespaceName(root);
   if (!namespace) return index;
@@ -180,7 +186,12 @@ export function indexClojureScriptSource(source, index = new Map()) {
           const signatures = operator.startsWith("defn")
             ? signatureVectors(form, nameIndex)
             : nestedFnSignatures(form, nameIndex);
-          if (signatures.length) index.set(`${namespace}/${localName}`, { source, signatures });
+          index.set(`${namespace}/${localName}`, {
+            source,
+            signatures,
+            url,
+            ...sourcePosition(source, form.start)
+          });
         }
       }
     }
@@ -200,35 +211,57 @@ export function resolveArgumentNames(index, componentName, arity) {
   return null;
 }
 
-function collectMap(map, result) {
+export function resolveSourceLocation(index, componentName) {
+  const definition = index.get(componentName);
+  if (!definition?.url) return null;
+  return {
+    componentName,
+    url: definition.url,
+    line: definition.line,
+    column: definition.column
+  };
+}
+
+function absoluteSourceUrl(source, sourceRoot, mapUrl) {
+  const rooted = sourceRoot ? `${sourceRoot.replace(/\/$/, "")}/${source.replace(/^\//, "")}` : source;
+  try {
+    return new URL(rooted, mapUrl).href;
+  } catch (_) {
+    return rooted;
+  }
+}
+
+function collectMap(map, result, mapUrl) {
   if (!map || typeof map !== "object") return;
   if (Array.isArray(map.sections)) {
-    for (const section of map.sections) collectMap(section?.map, result);
+    for (const section of map.sections) collectMap(section?.map, result, mapUrl);
   }
   if (Array.isArray(map.sourcesContent)) {
     map.sourcesContent.forEach((content, index) => {
-      const url = map.sources?.[index] || "";
-      if (typeof content === "string" && /\.clj[sc]?(?:$|[?#])/i.test(url)) {
-        result.push({ url, content });
+      const source = map.sources?.[index] || "";
+      if (typeof content === "string" && /\.clj[sc]?(?:$|[?#])/i.test(source)) {
+        result.push({ url: absoluteSourceUrl(source, map.sourceRoot, mapUrl), content });
       }
     });
   }
 }
 
-export function embeddedSources(sourceMap) {
+export function embeddedSources(sourceMap, mapUrl = "") {
   const parsed = typeof sourceMap === "string" ? JSON.parse(sourceMap) : sourceMap;
   const result = [];
-  collectMap(parsed, result);
+  collectMap(parsed, result, mapUrl);
   return result;
 }
 
 export function addSourceResource(index, url, content) {
   if (/\.map(?:$|[?#])/i.test(url)) {
-    for (const source of embeddedSources(content)) {
-      if (/\.clj[sc]?(?:$|[?#])/i.test(source.url)) indexClojureScriptSource(source.content, index);
+    for (const source of embeddedSources(content, url)) {
+      if (/\.clj[sc]?(?:$|[?#])/i.test(source.url)) {
+        indexClojureScriptSource(source.content, index, source.url);
+      }
     }
   } else if (/\.clj[sc]?(?:$|[?#])/i.test(url)) {
-    indexClojureScriptSource(content, index);
+    indexClojureScriptSource(content, index, url);
   }
   return index;
 }

@@ -18,6 +18,7 @@
     (is (some #{"transit-json"} (:features capabilities)))
     (is (some #{"reagent-only-picker"} (:features capabilities)))
     (is (some #{"reagent-component-highlights"} (:features capabilities)))
+    (is (some #{"causal-render-provenance"} (:features capabilities)))
     (is (fn? (gobj/get api "selectElement")))
     (is (fn? (gobj/get api "navigateElement")))
     (is (fn? (gobj/get api "selectedElement")))
@@ -44,6 +45,13 @@
     (is (nil? (bridge/relative-element selected "unknown")))
     (is (nil? (bridge/relative-element #js {:nextElementSibling inspector-overlay} "next")))))
 
+(deftest selection-boundaries-reset-app-db-expansions
+  (reset! state/selection-generation 12)
+  (reset! state/app-db-expansions {[:items] 20})
+  (is (= 13 (state/begin-selection!)))
+  (is (= 13 @state/selection-generation))
+  (is (empty? @state/app-db-expansions)))
+
 (deftest expands-a-token-to-its-complete-value
   (let [token (state/new-token!)
         value {:long (apply str (repeat 1500 "x"))}]
@@ -52,15 +60,30 @@
       (is (:ok response))
       (is (= (shared/value-string value) (:value response))))))
 
-(deftest incrementally-expands-app-db-context
+(deftest app-db-branches-remain-strictly-pruned
   (reset! db/app-db {:items (vec (range 100))})
   (reset! state/app-db-paths [[:items 50]])
   (reset! state/app-db-expansions {})
   (let [response (decode (bridge/expand-app-db-path "[:items]"))]
     (is (:ok response))
-    (is (> (count (remove #(= "ellipsis" (get-in % [:node :kind]))
-                          (get-in response [:node :children])))
-           5))))
+    (is (= ["50"] (mapv :key (get-in response [:node :children]))))))
+
+(deftest app-db-collection-expansion-advances-from-the-visible-page
+  (reset! db/app-db {:items (vec (range 25))})
+  (reset! state/app-db-paths [[:items]])
+  (reset! state/app-db-expansions {})
+  (let [first-response (decode (bridge/expand-app-db-path "[:items]" 0))
+        first-children (get-in first-response [:node :children])
+        second-response (decode (bridge/expand-app-db-path "[:items]" 10))
+        second-children (get-in second-response [:node :children])]
+    (is (:ok first-response))
+    (is (= 11 (count first-children)))
+    (is (= "… 15 more" (get-in (last first-children) [:node :text])))
+    (is (= 10 (get-in (last first-children) [:node :visible-count])))
+    (is (:ok second-response))
+    (is (= 21 (count second-children)))
+    (is (= "… 5 more" (get-in (last second-children) [:node :text])))
+    (is (= 20 (get @state/app-db-expansions [:items])))))
 
 (deftest expands-an-app-db-scalar-to-its-complete-value
   (let [value (apply str (repeat 400 "x"))]

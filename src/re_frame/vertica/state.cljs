@@ -2,6 +2,7 @@
 
 (defonce registrations (atom {}))
 (defonce selected-element (atom nil))
+(defonce selection-generation (atom 0))
 (defonce hover-element (atom nil))
 (defonce picker-outcome (atom nil))
 (defonce component-highlights-enabled? (atom true))
@@ -14,6 +15,10 @@
 (defonce token-counter (atom 0))
 
 (defn bump! [] (swap! revision inc))
+
+(defn begin-selection! []
+  (reset! app-db-expansions {})
+  (swap! selection-generation inc))
 
 (defn warn! [warning]
   (swap! runtime-warnings

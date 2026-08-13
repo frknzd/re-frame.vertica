@@ -262,6 +262,7 @@
                              (cancel-lock-timer)
                              (reset! state/selected-element element)
                              (reset! state/hover-element nil)
+                             (state/begin-selection!)
                              (reset! state/picker-outcome :locked)
                              (state/bump!)
                              (stop!)))

@@ -4,19 +4,24 @@ body { margin: 0; overflow: hidden; background: #0b0e13; color: #e9edf3; }
 body > header { height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 11px; border-bottom: 1px solid #262c36; background: #14181f; }
 body > header strong { color: #8cddff; letter-spacing: -.01em; }
 #status { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9ca8b9; }
+body.preload-missing #status { color: #f2c879; }
 button { border: 1px solid #414b5b; border-radius: 6px; background: #242a34; color: inherit; padding: 4px 10px; cursor: pointer; }
 button:hover { background: #303846; border-color: #566277; }
 button:disabled { cursor: default; opacity: .35; background: #1c2129; border-color: #303744; }
 #tree-nav { display: flex; align-items: center; gap: 3px; }
 #tree-nav button { display: grid; width: 27px; height: 27px; padding: 0; place-items: center; border-radius: 5px; color: #b9c8d9; font: 15px/1 ui-monospace, monospace; }
 #refresh { white-space: nowrap; }
+#open-source { max-width: min(300px, 28vw); overflow: hidden; border-color: #2d6858; background: #17342c; color: #9ce9ca; text-overflow: ellipsis; white-space: nowrap; }
+#open-source:hover { border-color: #49a98c; background: #21483d; }
+#open-source[hidden] { display: none; }
 #refresh.loading { cursor: wait; border-color: #3f708a; color: #8cddff; }
 #component-boxes[aria-pressed="true"] { border-color: #765092; background: #332141; color: #ddaef7; }
 #component-boxes[aria-pressed="false"] { color: #8f98a6; }
 main { height: calc(100vh - 42px); }
 #canvas-wrap { position: relative; min-width: 0; height: 100%; overflow: auto; background: #0d1118; scrollbar-color: #3f4958 #11161e; }
 #graph { display: grid; gap: 14px; width: 100%; min-width: 520px; padding: 16px; }
-#empty { position: absolute; inset: 0; display: grid; place-items: center; color: #8490a1; pointer-events: none; }
+#empty { position: absolute; inset: 0; display: grid; max-width: 680px; margin: auto; padding: 32px; place-items: center; color: #8490a1; text-align: center; pointer-events: none; }
+body.preload-missing #empty { color: #e7bd70; }
 #empty[hidden] { display: none; }
 
 .graph-section { overflow: hidden; border: 1px solid var(--section-border); border-radius: 10px; background: var(--section-bg); }
@@ -100,12 +105,26 @@ main { height: calc(100vh - 42px); }
 .db-tree-key { position: relative; display: inline-block; flex: 0 1 auto; margin-right: 9px; color: #83d9b8; }
 .db-tree-value { position: relative; display: inline-block; flex: 0 1 auto; max-width: min(1100px, calc(100vw - 130px)); color: #d6e3dc; white-space: pre-wrap; overflow-wrap: anywhere; }
 .db-tree-line > .component-badges { flex: 1 1 260px; margin: 1px 0 0 9px; }
+.db-vector-entries { display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px; padding: 2px 18px 5px calc(35px + var(--db-depth) * 20px); }
+.db-vector-entry { display: inline-flex; position: relative; flex: 0 1 auto; align-items: baseline; min-width: 0; max-width: min(380px, calc(100vw - 100px)); padding: 2px 6px; border: 1px solid rgba(67, 223, 162, .14); border-radius: 5px; background: rgba(4, 18, 13, .3); color: #d6e3dc; font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.db-vector-entry:hover { border-color: rgba(67, 223, 162, .34); background: rgba(67, 223, 162, .07); }
+.db-vector-entry.exact { border-color: rgba(67, 223, 162, .42); background: rgba(67, 223, 162, .11); box-shadow: inset 2px 0 #43dfa2; }
+.db-vector-entry.context { opacity: .52; }
+.db-vector-entry .db-vector-key { flex: 0 0 auto; margin-right: 5px; padding-right: 5px; border-right: 1px solid rgba(131, 217, 184, .22); color: #83d9b8; font-size: 10px; font-weight: 750; }
+.db-vector-entry .db-tree-value { min-width: 0; max-width: 280px; color: #effff8; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.db-vector-entry .db-tree-value .db-tree-code { white-space: nowrap; }
+.db-vector-entry .db-tree-value.expanded { white-space: pre-wrap; text-overflow: clip; overflow: visible; }
+.db-vector-entry .db-tree-value.expanded .db-tree-code { white-space: pre-wrap; }
+.db-vector-entry .db-value-more { height: 18px; margin: 0 0 0 5px; padding: 0 5px; font-size: 9px; line-height: 16px; }
+.db-vector-entry > .compact-component-badges { flex: 0 0 auto; margin-left: 5px; }
+.compact-component-badge { min-width: 17px; padding: 1px 4px; text-align: center; font-size: 9px; cursor: help; }
+.compact-component-badge::before { content: none; }
 .db-tree-key[data-path]:hover::after { content: attr(data-path); position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; width: max-content; max-width: min(820px, 72vw); padding: 7px 9px; border: 1px solid #34775d; border-radius: 6px; background: #07130f; box-shadow: 0 8px 28px rgba(0, 0, 0, .48); color: #c9f7e4; font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: normal; overflow-wrap: anywhere; pointer-events: none; }
 .db-tree-toggle, .db-tree-toggle-spacer { flex: 0 0 16px; width: 16px; height: 16px; margin: 1px 6px 0 0; }
 .db-tree-toggle { display: grid; padding: 0; place-items: center; border-color: rgba(67, 223, 162, .22); border-radius: 4px; background: rgba(67, 223, 162, .07); color: #7ee0b9; font: 11px/1 ui-monospace, monospace; }
 .db-tree-toggle:hover { border-color: rgba(67, 223, 162, .5); background: rgba(67, 223, 162, .16); }
 .db-tree-collapsed-mark { height: 19px; margin: 1px 0 0 6px; padding: 0 6px; border-color: rgba(67, 223, 162, .18); background: rgba(67, 223, 162, .045); color: #78a996; font: 700 11px/1 ui-monospace, monospace; }
-.db-tree-summary { height: 21px; padding: 0 7px; border-color: rgba(67, 223, 162, .22); background: rgba(67, 223, 162, .06); color: #a8cfbf; font: 650 11px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.db-tree-summary { display: inline-flex; align-items: center; height: 21px; padding: 0 7px; border: 1px solid rgba(67, 223, 162, .22); border-radius: 5px; background: rgba(67, 223, 162, .06); color: #a8cfbf; font: 650 11px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .db-tree-summary:hover, .db-tree-collapsed-mark:hover { border-color: rgba(67, 223, 162, .5); background: rgba(67, 223, 162, .15); color: #cdf6e6; }
 .db-tree-summary.loading { cursor: wait; opacity: .55; }
 .db-value-more { display: inline-block; flex: 0 0 auto; height: 21px; margin: 1px 0 0 8px; }

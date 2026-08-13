@@ -1,6 +1,5 @@
 (ns re-frame.vertica.fixture
   (:require [re-frame.core :as rf]
-            [reagent.core :as r]
             [reagent.dom :as rdom]
             [re-frame.vertica.preload]))
 

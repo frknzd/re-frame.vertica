@@ -18,7 +18,7 @@ export function bridgeExpression(method, argumentExpression = "") {
 }
 
 export function compatibilityMessage(capabilities) {
-  if (!capabilities) return "Preload missing. Add re-frame.vertica.preload before application namespaces and reload the page.";
+  if (!capabilities) return "Preload missing or not loaded. This app may need re-frame.vertica.preload (globalThis.__RE_FRAME_VERTICA__ is unavailable).";
   if (capabilities.protocol !== PROTOCOL_VERSION) {
     return `Bridge protocol ${capabilities.protocol ?? "unknown"} is incompatible with extension protocol ${PROTOCOL_VERSION}. Upgrade the preload and extension together.`;
   }

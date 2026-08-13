@@ -4,7 +4,8 @@ import {
   addSourceResource,
   embeddedSources,
   indexClojureScriptSource,
-  resolveArgumentNames
+  resolveArgumentNames,
+  resolveSourceLocation
 } from "../src-js/source-args.mjs";
 
 test("extracts embedded ClojureScript from indexed source maps", () => {
@@ -28,6 +29,45 @@ test("extracts embedded ClojureScript from indexed source maps", () => {
     { url: "src/app/views.cljs", content: "(ns app.views)" },
     { url: "src/app/panel.cljc", content: "(ns app.panel)" }
   ]);
+});
+
+test("resolves a component definition to its source URL and position", () => {
+  const source = `(ns example.views)\n\n;; heading\n(defn card [item]\n  [:article item])`;
+  const index = indexClojureScriptSource(source, new Map(), "file:///workspace/src/example/views.cljs");
+
+  assert.deepEqual(resolveSourceLocation(index, "example.views/card"), {
+    componentName: "example.views/card",
+    url: "file:///workspace/src/example/views.cljs",
+    line: 4,
+    column: 1
+  });
+});
+
+test("indexes component vars even when their value is not a literal fn", () => {
+  const source = `(ns example.views)\n(def card (reagent.core/create-class {}))`;
+  const index = indexClojureScriptSource(source, new Map(), "https://example.test/src/example/views.cljs");
+
+  assert.deepEqual(resolveSourceLocation(index, "example.views/card"), {
+    componentName: "example.views/card",
+    url: "https://example.test/src/example/views.cljs",
+    line: 2,
+    column: 1
+  });
+  assert.equal(resolveArgumentNames(index, "example.views/card", 0), null);
+});
+
+test("resolves embedded source paths relative to the source map", () => {
+  const map = {
+    version: 3,
+    sourceRoot: "../src",
+    sources: ["example/views.cljs"],
+    sourcesContent: ["(ns example.views) (defn card [] nil)"]
+  };
+
+  assert.deepEqual(embeddedSources(map, "https://example.test/js/app.js.map"), [{
+    url: "https://example.test/src/example/views.cljs",
+    content: "(ns example.views) (defn card [] nil)"
+  }]);
 });
 
 test("resolves defn argument names by namespace, component, and arity", () => {

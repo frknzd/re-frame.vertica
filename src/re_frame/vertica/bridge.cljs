@@ -18,20 +18,8 @@
 (defn- encode [value]
   (transit/write writer (clj->js value)))
 
-(defn- bounded-snapshot [element]
-  (let [snapshot (graph/snapshot element)
-        nodes (vec (take 300 (:nodes snapshot)))
-        ids (set (map :id nodes))
-        edges (->> (:edges snapshot)
-                   (filter #(and (ids (:from %)) (ids (:to %))))
-                   (take 600) vec)
-        truncated? (or (:truncated? snapshot)
-                       (< (count nodes) (count (:nodes snapshot)))
-                       (< (count edges) (count (:edges snapshot))))]
-    (cond-> (assoc snapshot :nodes nodes :edges edges)
-      truncated? (update :warnings conj
-                         {:code :snapshot-truncated
-                          :message "Graph exceeded the 300 node / 600 edge transport limit."}))))
+(defn- graph-snapshot [element]
+  (graph/snapshot element))
 
 (defn capabilities []
   (encode {:protocol shared/protocol-version
@@ -43,7 +31,8 @@
            :features [:elements-selection :crosshair-picker :hover-preview
                       :reagent-only-picker :reagent-component-highlights
                       :element-navigation :persistent-highlight
-                      :graph-snapshot :node-logging :node-expansion :transit-json]}))
+                      :graph-snapshot :node-logging :node-expansion :transit-json
+                      :causal-render-provenance]}))
 
 (defn- selectable-element [element]
   (when (and element (not (picker/inspector-overlay? element))) element))
@@ -68,6 +57,7 @@
   (let [element (or @state/hover-element @state/selected-element)]
     (encode {:protocol shared/protocol-version
              :revision @state/revision
+             :selection-generation @state/selection-generation
              :picker-active (picker/active?)
              :component-highlights @state/component-highlights-enabled?
              :picker-outcome @state/picker-outcome
@@ -77,14 +67,14 @@
 (defn select-element [element]
   (reset! state/selected-element element)
   (reset! state/hover-element nil)
-  (reset! state/app-db-expansions {})
+  (state/begin-selection!)
   (picker/highlight! element)
   (state/bump!)
-  (encode (assoc (bounded-snapshot element) :navigation (navigation-state element))))
+  (encode (assoc (graph-snapshot element) :navigation (navigation-state element))))
 
 (defn snapshot []
   (let [element (or @state/hover-element @state/selected-element)]
-    (encode (assoc (bounded-snapshot element)
+    (encode (assoc (graph-snapshot element)
                    :navigation (navigation-state @state/selected-element)))))
 
 (defn navigate-element [direction]
@@ -92,10 +82,10 @@
     (do
       (reset! state/selected-element element)
       (reset! state/hover-element nil)
-      (reset! state/app-db-expansions {})
+      (state/begin-selection!)
       (picker/highlight! element)
       (state/bump!)
-      (encode (assoc (bounded-snapshot element) :navigation (navigation-state element))))
+      (encode (assoc (graph-snapshot element) :navigation (navigation-state element))))
     (encode {:protocol shared/protocol-version :ok false
              :error "There is no element in that direction."
              :navigation (navigation-state @state/selected-element)})))
@@ -122,20 +112,25 @@
     (encode {:protocol shared/protocol-version :ok false
              :error "Node token is unknown or belongs to an expired snapshot."})))
 
-(defn expand-app-db-path [path-label]
-  (try
-    (let [path (reader/read-string path-label)]
-      (if-not (vector? path)
-        (encode {:protocol shared/protocol-version :ok false :error "Invalid app-db path."})
-        (let [value (get-in @db/app-db path)
-              expansions (swap! state/app-db-expansions update path (fnil + 2) 10)]
-          (encode {:protocol shared/protocol-version
-                   :ok true
-                   :value (when-not (coll? value) (shared/value-string value))
-                   :node (projection/app-db-branch @db/app-db @state/app-db-paths path expansions)}))))
-    (catch :default error
-      (encode {:protocol shared/protocol-version :ok false
-               :error (or (ex-message error) (str error))}))))
+(defn expand-app-db-path
+  ([path-label] (expand-app-db-path path-label nil))
+  ([path-label visible-count]
+   (try
+     (let [path (reader/read-string path-label)]
+       (if-not (vector? path)
+         (encode {:protocol shared/protocol-version :ok false :error "Invalid app-db path."})
+         (let [value (get-in @db/app-db path)
+               visible-count (if (number? visible-count) visible-count 0)
+               current-limit (get @state/app-db-expansions path 0)
+               next-limit (+ 10 (max visible-count current-limit))
+               expansions (swap! state/app-db-expansions assoc path next-limit)]
+           (encode {:protocol shared/protocol-version
+                    :ok true
+                    :value (when-not (coll? value) (shared/value-string value))
+                    :node (projection/app-db-branch @db/app-db @state/app-db-paths path expansions)}))))
+     (catch :default error
+       (encode {:protocol shared/protocol-version :ok false
+                :error (or (ex-message error) (str error))})))))
 
 (defn request [payload]
   (try

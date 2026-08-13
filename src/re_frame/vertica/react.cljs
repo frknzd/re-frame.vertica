@@ -42,6 +42,26 @@
   (or (some-> (gobj/get fiber "stateNode") (gobj/get "cljsRatom"))
       (hook-reaction fiber)))
 
+(defn- hook-render-state [fiber reaction]
+  (loop [hook (gobj/get fiber "memoizedState")]
+    (when hook
+      (let [state (gobj/get hook "memoizedState")
+            current (when (and state (object? state)) (gobj/get state "current"))]
+        (if (and current (identical? reaction (gobj/get current "cljsRatom")))
+          current
+          (recur (gobj/get hook "next")))))))
+
+(defn component-argv-slot [{:keys [fiber reaction]}]
+  (let [state-node (gobj/get fiber "stateNode")
+        class-props (some-> state-node (gobj/get "props"))
+        functional-state (hook-render-state fiber reaction)
+        target (cond
+                 (and (object? class-props) (some? (gobj/get class-props "argv"))) class-props
+                 (and (object? functional-state) (some? (gobj/get functional-state "argv"))) functional-state
+                 :else nil)]
+    (when target
+      {:target target :value (gobj/get target "argv")})))
+
 (defn- function-names [f]
   (when f
     (remove nil?
@@ -130,6 +150,22 @@
                       :reaction reaction}
             (contains? host-tags tag) nil
             :else (recur (gobj/get cursor "return"))))))))
+
+(defn selected-element-route [element component]
+  (when (and element component)
+    (loop [candidate element indices []]
+      (when candidate
+        (let [owner (direct-reagent-owner candidate)]
+          (if (= (:id component) (:id owner))
+            {:root {:tag (.-tagName candidate)
+                    :id (or (.-id candidate) "")
+                    :classes (if (string? (.-className candidate)) (.-className candidate) "")}
+             :indices indices}
+            (when-let [parent (.-parentElement candidate)]
+              (let [siblings (array-seq (.-children parent))
+                    index (first (keep-indexed #(when (identical? %2 candidate) %1) siblings))]
+                (when (some? index)
+                  (recur parent (into [index] indices)))))))))))
 
 (defn reagent-root-element? [element]
   (boolean (direct-reagent-owner element)))

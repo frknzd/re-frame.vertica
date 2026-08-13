@@ -18,6 +18,25 @@ function comparePaths(a, b) {
 
 export const APP_DB_ASSOCIATION_WILDCARD = "__re-frame.vertica-wildcard__";
 
+export function groupDbVectorEntries(entries = []) {
+  const groups = [];
+  for (const entry of entries) {
+    const layout = entry?.node?.kind === "scalar" ? "compact" : "tree";
+    const current = groups.at(-1);
+    if (current?.layout === layout) {
+      current.entries.push(entry);
+    } else {
+      groups.push({ layout, entries: [entry] });
+    }
+  }
+  return groups;
+}
+
+export function dbCollectionStartsCollapsed(node, threshold = 5) {
+  return ["map", "vector", "set"].includes(node?.kind) &&
+    node?.["all-children?"] === true && Number(node?.["child-count"]) > threshold;
+}
+
 function pathSegment(value) {
   return String(value);
 }
@@ -177,11 +196,12 @@ export function buildSections(nodes, edges = []) {
   for (const node of nodes) kindById.set(node.id, node.kind);
 
   return SECTION_ORDER.map(kind => {
-    const layer = layers[kind].sort(kind === "app-db-path" ? comparePaths : compareNodes);
+    const pathLayer = kind === "app-db-path";
+    const layer = layers[kind].sort(pathLayer ? comparePaths : compareNodes);
     const sameKindEdges = edges.filter(edge => {
       return kindById.get(edge.from) === kind && kindById.get(edge.to) === kind;
     });
-    const orderedNodes = kind === "app-db-path"
+    const orderedNodes = pathLayer
       ? layer.map(node => ({ ...node, depth: 0 }))
       : hierarchicalNodes(layer, sameKindEdges, kind === "subscription" || kind === "component");
     return {

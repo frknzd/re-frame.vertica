@@ -3,11 +3,8 @@
 
 (declare tracked)
 
-(def max-recorded-paths 600)
-
 (defn read-log []
-  (atom {:recorded #{}
-         :paths #{}
+  (atom {:paths #{}
          :structural #{}
          :complete-iterations #{}}))
 
@@ -30,24 +27,12 @@
 (defn- record! [reads path]
   (let [path (vec path)]
     (when-not (contains? (:paths @reads) path)
-      (when (and (not (contains? (:recorded @reads) path))
-                 (>= (count (:recorded @reads)) max-recorded-paths))
-        (throw (ex-info "provenance read limit reached"
-                        {:type ::read-limit :operation :read-limit :path path})))
-      (swap! reads #(-> %
-                        (update :recorded conj path)
-                        (update :paths conj path))))))
+      (swap! reads update :paths conj path))))
 
 (defn- record-structural! [reads path]
   (let [path (vec path)]
     (when-not (contains? (:structural @reads) path)
-      (when (and (not (contains? (:recorded @reads) path))
-                 (>= (count (:recorded @reads)) max-recorded-paths))
-        (throw (ex-info "provenance read limit reached"
-                        {:type ::read-limit :operation :read-limit :path path})))
-      (swap! reads #(-> %
-                        (update :recorded conj path)
-                        (update :structural conj path))))))
+      (swap! reads update :structural conj path))))
 
 (defn- complete-iteration! [reads path]
   (swap! reads update :complete-iterations conj (vec path)))

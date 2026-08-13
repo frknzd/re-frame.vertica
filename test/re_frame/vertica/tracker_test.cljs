@@ -95,11 +95,10 @@
     (is (= [[:user :name]] (:paths result)))
     (is (re-find #"boom" (:reason result)))))
 
-(deftest collection-heavy-replays-stop-at-the-read-limit
-  (let [large-db {:rows (mapv #(hash-map :id %) (range (+ tracker/max-recorded-paths 1000)))}
+(deftest collection-heavy-replays-have-no-path-count-limit
+  (let [large-db {:rows (mapv #(hash-map :id %) (range 1600))}
         result (tracker/replay
                  (fn [db _] (mapv :id (:rows db)))
                  large-db [:large] nil)]
-    (is (false? (:complete? result)))
-    (is (= :read-limit (:operation result)))
-    (is (<= (count (:paths result)) tracker/max-recorded-paths))))
+    (is (:complete? result))
+    (is (= 1600 (count (:paths result))))))

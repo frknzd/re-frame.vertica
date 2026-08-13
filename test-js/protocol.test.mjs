@@ -8,10 +8,12 @@ test("bridge expressions keep DOM expressions in the inspected context", () => {
   assert.match(expression, /selectElement/);
   assert.match(expression, /f\(\$0\)/);
   assert.doesNotMatch(expression, /eval\(/);
+  assert.match(bridgeExpression("expandAppDbPath", '"[:items]",10'), /f\("\[:items\]",10\)/);
 });
 
 test("missing and incompatible bridges are actionable", () => {
   assert.match(compatibilityMessage(null), /Preload missing/);
+  assert.match(compatibilityMessage(null), /globalThis\.__RE_FRAME_VERTICA__/);
   assert.match(compatibilityMessage({ protocol: 99 }), /Upgrade the preload and extension together/);
   assert.equal(compatibilityMessage({ protocol: PROTOCOL_VERSION, "registration-hook": true, "react-supported": true }), "Connected");
 });
