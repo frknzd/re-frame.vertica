@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "re-frame.vertica",
   "description": "Trace app-db through subscriptions, props, components, and the DOM.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "devtools_page": "devtools.html",
   "permissions": []
 }
