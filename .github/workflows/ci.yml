@@ -21,6 +21,7 @@ jobs:
 
       - uses: DeLaGuardo/setup-clojure@13.6.1
         with:
+          bb: 1.12.209
           cli: 1.12.3.1577
           lein: 2.12.0
 
@@ -30,6 +31,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run check:version
-      - run: npm run verify
+      - run: bb check:version
+      - run: bb verify
       - run: lein pom

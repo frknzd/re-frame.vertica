@@ -88,6 +88,7 @@ The automated suite and production fixtures use these versions:
 | Transit CLJS | 0.8.280 |
 | Browser | Chrome 120 or newer |
 | Node.js used by the build | 20.x |
+| Babashka used by the build | 1.12.209 |
 | Leiningen used by CI | 2.12.0 |
 | Java used by CI | Temurin 21 |
 
@@ -101,14 +102,14 @@ Snapshots are not quantity-capped, so selecting a component backed by an excepti
 
 ## Develop and verify
 
-Requirements are Node.js 20+, npm, Java, Leiningen, and Clojure CLI.
+Requirements are Node.js 20+, npm, Babashka 1.12.209+, Java, Leiningen, and Clojure CLI.
 
 ```bash
 npm ci
-npm run verify
+bb verify
 ```
 
-`npm run verify` runs the JVM shared-model tests, the ClojureScript tracking and panel tests, the production preload build, and both React fixture builds. The shipped inspector runtime, including its Reagent/Hiccup panel, panel host, layout logic, tokenizer, and source-map parser, is implemented in ClojureScript. Build output is written under `dist/preload` and `dist/fixtures`.
+`bb verify` runs the JVM shared-model tests, the ClojureScript tracking and panel tests, the production preload build, and both React fixture builds. Run `bb tasks` to list the individual test, build, version-check, and release tasks. The shipped inspector runtime, including its Reagent/Hiccup panel, panel host, layout logic, tokenizer, and source-map parser, is implemented in ClojureScript. Build output is written under `dist/preload` and `dist/fixtures`.
 
 For a manual fixture test, serve either `dist/fixtures/react17` or `dist/fixtures/react18` over HTTP, focus the page, and press `Ctrl+Shift+V`.
 

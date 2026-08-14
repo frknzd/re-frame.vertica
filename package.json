@@ -13,19 +13,6 @@
   "engines": {
     "node": ">=20"
   },
-  "scripts": {
-    "test": "npm run test:cljs",
-    "test:jvm": "lein test",
-    "test:cljs": "shadow-cljs compile test",
-    "build:preload": "shadow-cljs release preload",
-    "build:fixtures": "shadow-cljs release fixture-react17 fixture-react18 && node scripts/build-fixtures.mjs",
-    "build": "node scripts/clean.mjs && npm run build:preload && npm run build:fixtures",
-    "verify": "npm run test:jvm && npm test && npm run build",
-    "check:version": "node scripts/check-version.mjs",
-    "release:patch": "bump-my-version bump patch",
-    "release:minor": "bump-my-version bump minor",
-    "release:major": "bump-my-version bump major"
-  },
   "devDependencies": {
     "react": "18.3.1",
     "react-dom": "18.3.1",
