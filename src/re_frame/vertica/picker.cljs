@@ -18,6 +18,7 @@
 (def ^:private heartbeat-timeout-ms 5000)
 (def ^:private highlight-id "__re-frame.vertica-highlight")
 (def ^:private component-highlight-id "__re-frame.vertica-component-highlights")
+(def ^:private panel-id "__re-frame-vertica-panel")
 (def ^:private svg-ns "http://www.w3.org/2000/svg")
 (def ^:private blocked-interaction-events
   ["pointerdown" "pointerup" "pointercancel"
@@ -43,9 +44,11 @@
   (loop [candidate element]
     (if-not candidate
       false
-      (if (contains? #{highlight-id component-highlight-id} (.-id candidate))
+      (if (contains? #{highlight-id component-highlight-id panel-id} (.-id candidate))
         true
-        (recur (.-parentElement candidate))))))
+        (recur (or (.-parentElement candidate)
+                   (when (fn? (.-getRootNode candidate))
+                     (some-> (.getRootNode candidate) .-host))))))))
 
 (defn- make-component-overlay []
   (let [overlay (.createElementNS js/document svg-ns "svg")]

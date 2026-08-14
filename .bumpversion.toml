@@ -1,5 +1,5 @@
 [tool.bumpversion]
-current_version = "0.2.0"
+current_version = "0.3.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = true
@@ -26,11 +26,6 @@ search = '''      "name": "re-frame.vertica",
       "version": "{current_version}",'''
 replace = '''      "name": "re-frame.vertica",
       "version": "{new_version}",'''
-
-[[tool.bumpversion.files]]
-filename = "extension/manifest.json"
-search = '"version": "{current_version}"'
-replace = '"version": "{new_version}"'
 
 [[tool.bumpversion.files]]
 filename = "project.clj"

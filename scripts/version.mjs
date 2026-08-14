@@ -15,10 +15,9 @@ function matchVersion(contents, pattern, source) {
 }
 
 export async function readVersions() {
-  const [packageJson, packageLock, manifest, project, bumpConfig] = await Promise.all([
+  const [packageJson, packageLock, project, bumpConfig] = await Promise.all([
     readJson("package.json"),
     readJson("package-lock.json"),
-    readJson("extension/manifest.json"),
     readFile("project.clj", "utf8"),
     readFile(".bumpversion.toml", "utf8")
   ]);
@@ -27,7 +26,6 @@ export async function readVersions() {
     "package.json": packageJson.version,
     "package-lock.json": packageLock.version,
     "package-lock.json root package": packageLock.packages?.[""]?.version,
-    "extension/manifest.json": manifest.version,
     "project.clj": matchVersion(
       project,
       /\(defproject\s+net\.clojars\.frknzd\/re-frame\.vertica\s+"([^"]+)"/,

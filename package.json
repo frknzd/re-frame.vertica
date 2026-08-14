@@ -1,8 +1,8 @@
 {
   "name": "re-frame.vertica",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "A Chrome DevTools vertical slice through re-frame data flow",
+  "description": "An in-app vertical slice through re-frame data flow",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/frknzd/re-frame.vertica.git"
@@ -14,28 +14,23 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "npm run test:cljs && npm run test:extension",
+    "test": "npm run test:cljs",
     "test:jvm": "lein test",
     "test:cljs": "shadow-cljs compile test",
-    "test:extension": "node --test test-js/*.test.mjs",
-    "build:panel": "node scripts/build-extension.mjs",
     "build:preload": "shadow-cljs release preload",
     "build:fixtures": "shadow-cljs release fixture-react17 fixture-react18 && node scripts/build-fixtures.mjs",
-    "build": "node scripts/clean.mjs && npm run build:panel && npm run build:preload && npm run build:fixtures",
+    "build": "node scripts/clean.mjs && npm run build:preload && npm run build:fixtures",
     "verify": "npm run test:jvm && npm test && npm run build",
     "check:version": "node scripts/check-version.mjs",
-    "package:extension": "node scripts/package-extension.mjs",
     "release:patch": "bump-my-version bump patch",
     "release:minor": "bump-my-version bump minor",
     "release:major": "bump-my-version bump major"
   },
   "devDependencies": {
-    "esbuild": "0.25.8",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react17": "npm:react@17.0.2",
     "react-dom17": "npm:react-dom@17.0.2",
-    "shadow-cljs": "3.1.7",
-    "transit-js": "0.8.874"
+    "shadow-cljs": "3.1.7"
   }
 }

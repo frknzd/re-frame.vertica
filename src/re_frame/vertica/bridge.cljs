@@ -18,6 +18,10 @@
 (defn- encode [value]
   (transit/write writer (clj->js value)))
 
+(defn decode-response [encoded]
+  (when (some? encoded)
+    (walk/keywordize-keys (transit/read reader encoded))))
+
 (defn- graph-snapshot [element]
   (graph/snapshot element))
 
@@ -28,7 +32,8 @@
            :registration-hook @registry/installed?
            :react-major (react/react-major)
            :react-supported (react/supported-react?)
-           :features [:elements-selection :crosshair-picker :hover-preview
+           :features [:in-page-panel :detachable-panel :keyboard-toggle
+                      :crosshair-picker :hover-preview
                       :reagent-only-picker :reagent-component-highlights
                       :element-navigation :persistent-highlight
                       :graph-snapshot :node-logging :node-expansion :transit-json
@@ -137,7 +142,7 @@
     (let [request (walk/keywordize-keys (transit/read reader payload))]
       (if (not= shared/protocol-version (:protocol request))
         (encode {:protocol shared/protocol-version :ok false
-                 :error "Incompatible bridge protocol. Upgrade the preload and extension together."})
+                 :error "Incompatible bridge protocol. Rebuild the application with one re-frame.vertica version."})
         (case (:action request)
           "capabilities" (capabilities)
           "status" (status)
@@ -168,6 +173,8 @@
                  :logNode log-node
                  :expandNode expand-node
                  :expandAppDbPath expand-app-db-path
-                 :request request}]
+                 :request request
+                 :decodeResponse (fn [encoded]
+                                   (some-> encoded decode-response clj->js))}]
     (gobj/set js/globalThis "__RE_FRAME_VERTICA__" api)
     api))

@@ -49,7 +49,6 @@ jobs:
       - run: npm ci
       - run: npm run check:version -- "${{ steps.version.outputs.version }}"
       - run: npm run verify
-      - run: npm run package:extension -- "${{ steps.version.outputs.version }}"
       - run: lein pom
 
       - name: Publish library to Clojars
@@ -71,21 +70,15 @@ jobs:
             lein deploy clojars
           fi
 
-      - name: Create checksums
-        shell: bash
-        run: |
-          cd release
-          sha256sum ./*.zip > SHA256SUMS
-
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "re-frame.vertica $GITHUB_REF_NAME"
           else
-            gh release create "$GITHUB_REF_NAME" release/* \
+            gh release create "$GITHUB_REF_NAME" \
               --verify-tag \
               --generate-notes \
               --title "re-frame.vertica $GITHUB_REF_NAME"

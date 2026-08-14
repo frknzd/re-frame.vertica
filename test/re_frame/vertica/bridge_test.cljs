@@ -5,6 +5,7 @@
             [goog.object :as gobj]
             [re-frame.db :as db]
             [re-frame.vertica.bridge :as bridge]
+            [re-frame.vertica.picker :as picker]
             [re-frame.vertica.shared :as shared]
             [re-frame.vertica.state :as state]))
 
@@ -19,13 +20,17 @@
     (is (some #{"reagent-only-picker"} (:features capabilities)))
     (is (some #{"reagent-component-highlights"} (:features capabilities)))
     (is (some #{"causal-render-provenance"} (:features capabilities)))
+    (is (some #{"in-page-panel"} (:features capabilities)))
+    (is (some #{"detachable-panel"} (:features capabilities)))
     (is (fn? (gobj/get api "selectElement")))
     (is (fn? (gobj/get api "navigateElement")))
     (is (fn? (gobj/get api "selectedElement")))
     (is (fn? (gobj/get api "setComponentHighlights")))
     (is (fn? (gobj/get api "expandNode")))
     (is (fn? (gobj/get api "expandAppDbPath")))
-    (is (fn? (gobj/get api "logNode")))))
+    (is (fn? (gobj/get api "logNode")))
+    (is (fn? (gobj/get api "decodeResponse")))
+    (is (= 1 (gobj/get ((gobj/get api "decodeResponse") (bridge/capabilities)) "protocol")))))
 
 (deftest navigates-relative-dom-elements
   (let [parent #js {:id "parent"}
@@ -44,6 +49,13 @@
     (is (identical? next (bridge/relative-element selected "next")))
     (is (nil? (bridge/relative-element selected "unknown")))
     (is (nil? (bridge/relative-element #js {:nextElementSibling inspector-overlay} "next")))))
+
+(deftest panel-shadow-tree-is-not-inspectable
+  (let [host #js {:id "__re-frame-vertica-panel"}
+        child #js {:id "pick"
+                   :getRootNode (fn [] #js {:host host})}]
+    (is (picker/inspector-overlay? host))
+    (is (picker/inspector-overlay? child))))
 
 (deftest selection-boundaries-reset-app-db-expansions
   (reset! state/selection-generation 12)
@@ -99,4 +111,4 @@
         request (transit/write writer #js {:protocol 99 :action "status"})
         response (decode (bridge/request request))]
     (is (false? (:ok response)))
-    (is (re-find #"Upgrade" (:error response)))))
+    (is (re-find #"Rebuild" (:error response)))))
