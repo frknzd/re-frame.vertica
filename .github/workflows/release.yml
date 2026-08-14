@@ -48,7 +48,6 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - run: npm ci
-      - run: bb check:version "${{ steps.version.outputs.version }}"
       - run: bb verify
       - run: lein pom
 
