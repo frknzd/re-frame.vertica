@@ -8,4 +8,5 @@
 /release/
 /.venv/
 /pom.xml
+.idea
 re-frame.vertica.iml
