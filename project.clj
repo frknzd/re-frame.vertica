@@ -1,4 +1,4 @@
-(defproject net.clojars.frknzd/re-frame.vertica "0.3.4"
+(defproject net.clojars.frknzd/re-frame.vertica "0.3.5"
   :description "An in-app vertical slice through re-frame data flow"
   :url "https://github.com/frknzd/re-frame.vertica"
   :license {:name "MIT"
