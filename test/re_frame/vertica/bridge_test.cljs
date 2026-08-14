@@ -73,6 +73,7 @@
   (reset! state/app-db-expansions {})
   (let [response (decode (bridge/expand-app-db-path "[:items]"))]
     (is (:ok response))
+    (is (= :vector (get-in response [:node :kind])))
     (is (= ["50"] (mapv :key (get-in response [:node :children]))))))
 
 (deftest app-db-collection-expansion-advances-from-the-visible-page

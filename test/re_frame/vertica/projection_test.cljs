@@ -54,7 +54,7 @@
 (deftest exact-collections-are-leaves-not-context-expansions
   (let [tree (projection/app-db-tree {:items (vec (range 20))} [[:items]])
         items (child tree ":items")]
-    (is (= "summary" (:kind items)))
+    (is (= :summary (:kind items)))
     (is (= "[…]" (:text items)))
     (is (:exact? items))))
 
@@ -70,14 +70,14 @@
         rows (projection/app-db-branch db paths [:items 0 :rows]
                                       {[:items] 10 [:items 0] 10 [:items 0 :rows] 10})
         more (last (:children rows))]
-    (is (= "summary" (:kind initial)))
-    (is (= "vector" (:kind items)))
-    (is (= "summary" (:kind first-item)))
-    (is (= "map" (:kind item)))
-    (is (= "summary" (:kind rows-summary)))
-    (is (= "vector" (:kind rows)))
+    (is (= :summary (:kind initial)))
+    (is (= :vector (:kind items)))
+    (is (= :summary (:kind first-item)))
+    (is (= :map (:kind item)))
+    (is (= :summary (:kind rows-summary)))
+    (is (= :vector (:kind rows)))
     (is (= (mapv str (range 10)) (mapv :key (butlast (:children rows)))))
-    (is (= "ellipsis" (get-in more [:node :kind])))
+    (is (= :ellipsis (get-in more [:node :kind])))
     (is (= 10 (get-in more [:node :visible-count])))
     (is (= "… 15 more" (get-in more [:node :text])))))
 
@@ -90,7 +90,7 @@
     (is (true? (:all-children? items)))
     (is (= 25 (:child-count items)))
     (is (= 11 (count first-page)))
-    (is (= "ellipsis" (get-in (last first-page) [:node :kind])))
+    (is (= :ellipsis (get-in (last first-page) [:node :kind])))
     (is (= 21 (count (:children expanded))))
     (is (= "… 5 more" (get-in (last (:children expanded)) [:node :text])))))
 

@@ -43,23 +43,23 @@
 (defn- scalar-node [value path touched? exact?]
   (let [preview (shared/value-preview value 240)]
     (assoc (base-node path touched? exact?)
-           :kind "scalar"
+           :kind :scalar
            :text (:text preview)
            :preview-truncated? (:truncated? preview))))
 
 (defn- exact-collection-node [value path]
   (assoc (base-node path true true)
-         :kind "summary"
+         :kind :summary
          :text (collection-summary value)))
 
 (defn- context-collection-node [value path]
   (assoc (base-node path false false)
-         :kind "summary"
+         :kind :summary
          :text (collection-summary value)))
 
 (defn- ellipsis-node [path omitted visible-count]
   (assoc (base-node path false false)
-         :kind "ellipsis"
+         :kind :ellipsis
          :text (str "… " omitted " more")
          :visible-count visible-count))
 
@@ -170,11 +170,11 @@
     (cond
       (and exact? (coll? value) (not descendant?) (not (expanded? path)))
       (exact-collection-node value path)
-      (map? value) (collection-node base "map" "{" "}" value
+      (map? value) (collection-node base :map "{" "}" value
                                     (map-children value path paths) segments)
-      (vector? value) (collection-node base "vector" "[" "]" value
+      (vector? value) (collection-node base :vector "[" "]" value
                                        (vector-children value path paths) segments)
-      (set? value) (collection-node base "set" "#{" "}" value
+      (set? value) (collection-node base :set "#{" "}" value
                                     (set-children value path paths) segments)
       :else (scalar-node value path (boolean (seq relevant)) exact?))))
 
