@@ -6,7 +6,7 @@
 (defn compatibility-message [capabilities]
   (cond
     (nil? capabilities)
-    "Preload missing or not loaded. This app may need re-frame.vertica.preload (globalThis.__RE_FRAME_VERTICA__ is unavailable)."
+    "The in-application inspector bridge is unavailable. Rebuild the application with re-frame.vertica.preload."
 
     (not= protocol-version (:protocol capabilities))
     (str "Bridge protocol " (or (:protocol capabilities) "unknown")

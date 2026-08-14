@@ -96,7 +96,7 @@ React 17 and React 18 each have a separately compiled fixture. Other dependency 
 
 ## Privacy and runtime behavior
 
-The preload exposes `globalThis.__RE_FRAME_VERTICA__` using protocol version `1`. The panel and bridge both run locally in the inspected application's development build. No application data is sent to a service by this project.
+The panel and its bridge run locally in the inspected application's development build. The bridge is used directly by the attached or detached in-application panel and is not exposed as a page-global inspection API. No application data is sent to a service by this project.
 
 Snapshots are not quantity-capped, so selecting a component backed by an exceptionally large dependency set can take significant time and memory. Values, reactions, fibers, and DOM objects stay in the application runtime and are accessed through snapshot-scoped opaque tokens. Counterfactual app-db values never replace the live app-db, and temporarily substituted subscription and argv fields are restored in `finally`.
 

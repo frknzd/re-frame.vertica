@@ -2,7 +2,6 @@
   (:require [cljs.test :refer-macros [deftest is]]
             [cognitect.transit :as transit]
             [clojure.walk :as walk]
-            [goog.object :as gobj]
             [re-frame.db :as db]
             [re-frame.vertica.bridge :as bridge]
             [re-frame.vertica.picker :as picker]
@@ -13,8 +12,7 @@
   (walk/keywordize-keys (transit/read (transit/reader :json) encoded)))
 
 (deftest versioned-transit-bridge
-  (let [api (bridge/install!)
-        capabilities (decode (bridge/capabilities))]
+  (let [capabilities (decode (bridge/capabilities))]
     (is (= shared/protocol-version (:protocol capabilities)))
     (is (some #{"transit-json"} (:features capabilities)))
     (is (some #{"reagent-only-picker"} (:features capabilities)))
@@ -22,15 +20,8 @@
     (is (some #{"causal-render-provenance"} (:features capabilities)))
     (is (some #{"in-page-panel"} (:features capabilities)))
     (is (some #{"detachable-panel"} (:features capabilities)))
-    (is (fn? (gobj/get api "selectElement")))
-    (is (fn? (gobj/get api "navigateElement")))
-    (is (fn? (gobj/get api "selectedElement")))
-    (is (fn? (gobj/get api "setComponentHighlights")))
-    (is (fn? (gobj/get api "expandNode")))
-    (is (fn? (gobj/get api "expandAppDbPath")))
-    (is (fn? (gobj/get api "logNode")))
-    (is (fn? (gobj/get api "decodeResponse")))
-    (is (= 1 (gobj/get ((gobj/get api "decodeResponse") (bridge/capabilities)) "protocol")))))
+    (is (= shared/protocol-version
+           (:protocol (bridge/decode-response (bridge/capabilities)))))))
 
 (deftest navigates-relative-dom-elements
   (let [parent #js {:id "parent"}

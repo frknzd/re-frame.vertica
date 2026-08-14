@@ -2,7 +2,6 @@
   (:require [cognitect.transit :as transit]
             [cljs.reader :as reader]
             [clojure.walk :as walk]
-            [goog.object :as gobj]
             [re-frame.db :as db]
             [re-frame.vertica.graph :as graph]
             [re-frame.vertica.picker :as picker]
@@ -158,23 +157,3 @@
     (catch :default error
       (encode {:protocol shared/protocol-version :ok false
                :error (or (ex-message error) (str error))}))))
-
-(defn install! []
-  (let [api #js {:version shared/protocol-version
-                 :capabilities capabilities
-                 :status status
-                 :selectElement select-element
-                 :startPicker start-picker
-                 :stopPicker stop-picker
-                 :setComponentHighlights set-component-highlights
-                 :snapshot snapshot
-                 :navigateElement navigate-element
-                 :selectedElement selected-element
-                 :logNode log-node
-                 :expandNode expand-node
-                 :expandAppDbPath expand-app-db-path
-                 :request request
-                 :decodeResponse (fn [encoded]
-                                   (some-> encoded decode-response clj->js))}]
-    (gobj/set js/globalThis "__RE_FRAME_VERTICA__" api)
-    api))

@@ -3,8 +3,10 @@
             [re-frame.vertica.ui.protocol :as protocol]))
 
 (deftest bridge-errors-are-actionable
-  (is (re-find #"Preload missing" (protocol/compatibility-message nil)))
-  (is (re-find #"__RE_FRAME_VERTICA__" (protocol/compatibility-message nil)))
+  (is (re-find #"inspector bridge is unavailable"
+               (protocol/compatibility-message nil)))
+  (is (re-find #"re-frame.vertica.preload"
+               (protocol/compatibility-message nil)))
   (is (re-find #"Rebuild the application"
                (protocol/compatibility-message {:protocol 99})))
   (is (= "Connected"
