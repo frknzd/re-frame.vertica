@@ -1,5 +1,6 @@
 (ns re-frame.vertica.picker
   (:require [re-frame.vertica.react :as react]
+            [re-frame.vertica.shared :as shared]
             [re-frame.vertica.state :as state]))
 
 (defonce session (atom nil))
@@ -34,7 +35,7 @@
   (let [overlay (.createElement js/document "div")]
     (set! (.-id overlay) highlight-id)
     (set! (.-style.cssText overlay)
-          (str "position:fixed;z-index:2147483647;pointer-events:none;"
+          (str "position:fixed;z-index:" shared/selection-highlight-z-index ";pointer-events:none;"
                "border:2px solid #38bdf8;background:rgba(56,189,248,.15);"
                "box-sizing:border-box;display:none"))
     (.appendChild (.-documentElement js/document) overlay)
@@ -56,7 +57,8 @@
     (.setAttribute overlay "aria-hidden" "true")
     (set! (.-style.cssText overlay)
           (str "position:fixed;inset:0;width:100vw;height:100vh;"
-               "z-index:2147483646;pointer-events:none;display:none;overflow:hidden"))
+               "z-index:" shared/component-highlight-z-index
+               ";pointer-events:none;display:none;overflow:hidden"))
     (.appendChild (.-documentElement js/document) overlay)
     overlay))
 

@@ -6,11 +6,14 @@
 (def protocol-version 1)
 (def wildcard :re-frame.vertica/all)
 (def association-wildcard "__re-frame.vertica-wildcard__")
+(def panel-z-index 2147483647)
+(def selection-highlight-z-index (dec panel-z-index))
+(def component-highlight-z-index (- panel-z-index 2))
 
 (defn association-path
-  "Encode a provenance path without losing keyword namespaces through clj->js.
-  Strings are printed as EDN too, so the wildcard sentinel cannot collide with
-  an app-db string containing the same text."
+  "Encode a provenance path as stable strings for UI-side matching. Strings are
+  printed as EDN too, so the wildcard sentinel cannot collide with an app-db
+  string containing the same text."
   [path]
   (mapv #(if (= wildcard %)
            association-wildcard

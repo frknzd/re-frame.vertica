@@ -38,7 +38,7 @@ Load the preload only in development. It must start before the application names
 
 ## Use the panel
 
-Focus the application and press `Ctrl+Shift+V` to open or close the panel. The shortcut intentionally differs from re-frame-10x's `Ctrl+Shift+X`, so both tools can be loaded without toggling each other. Click **Pick**, then click a Reagent element in the page. The panel locks onto the closest Reagent render owner and shows its app-db paths, subscriptions, live props, component ownership, and selected DOM element.
+Focus the application and press `Ctrl+Shift+V` to open or close the panel. The shortcut intentionally differs from re-frame-10x's `Ctrl+Shift+X`, so both tools can be loaded without toggling each other. Click **Choose**, then click a Reagent element in the page. The panel locks onto the closest Reagent render owner and shows its app-db paths, subscriptions, live props, component ownership, and selected DOM element.
 
 Use **Detach** to move the inspector into a floating browser window. **Attach** returns it to the application. If the floating window is closed directly, the inspector reattaches to the page. The application tab must remain open because the floating panel inspects that live runtime. Browsers can block a programmatically opened window; if that happens, allow popups for the development origin and click **Detach** again.
 
@@ -53,7 +53,7 @@ The panel can also be controlled programmatically:
 
 The same controls are available to browser tooling on `globalThis.__RE_FRAME_VERTICA_PANEL__` as `show()`, `hide()`, `toggle()`, `detach()`, and `attach()`.
 
-The top bar provides parent, child, and sibling navigation; a refresh action; and a persistent setting for purple Reagent component boxes. Pick mode accepts Reagent roots only, temporarily hides the attached panel so the full page is reachable, and suppresses application clicks while active. The selected element keeps its blue page highlight while the panel is open.
+The top bar provides parent, child, and sibling navigation; a refresh action; and a persistent setting for purple Reagent component boxes. Choose mode accepts Reagent roots only, temporarily hides the attached panel so the full page is reachable, and suppresses application clicks while active. The selected element keeps its blue page highlight while the panel is open.
 
 When an application script exposes an accessible ClojureScript source map with `sourcesContent`, the panel recovers original component argument names. It also shows a `↗ file.cljs:line` link for the selected component; in an in-page panel that link opens the source URL in a new tab. Cross-origin scripts must permit browser fetches for this optional source-map feature.
 

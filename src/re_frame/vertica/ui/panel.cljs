@@ -11,7 +11,7 @@
 (def ^:private poll-interval 150)
 (def ^:private token-threshold 8000)
 (def ^:private component-boxes-setting "re-frame.vertica.component-boxes")
-(def ^:private select-element-message "Use Pick to select a Reagent element.")
+(def ^:private select-element-message "Use Choose to select a Reagent element.")
 
 (defn- call-bridge [method & arguments]
   (bridge/decode-response
@@ -875,13 +875,13 @@
                  "Show Reagent component boxes")
         :on-click #(toggle-component-boxes! context)}
        "◇ Boxes"]
-      [:button#pick
+      [:button#choose
        {:type "button"
         :data-active picker-active?
         :disabled (not bridge-ready?)
-        :title "Pick an element in the page"
+        :title "Choose an element in the page"
         :on-click #(toggle-picker! context)}
-       (if picker-active? "× Cancel" "⌖ Pick")]
+       (if picker-active? "× Cancel" "⌖ Choose")]
       [:button#detach
        {:type "button"
         :title detach-title

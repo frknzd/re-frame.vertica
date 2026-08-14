@@ -13,6 +13,7 @@
                  [reagent/reagent "1.2.0"]
                  [com.cognitect/transit-cljs "0.8.280"]]
   :source-paths ["src"]
+  :resource-paths ["resources"]
   :test-paths ["test"]
   :deploy-repositories
   [["clojars" {:url "https://repo.clojars.org"

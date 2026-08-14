@@ -5,7 +5,7 @@
 
 (defonce initialized
   (do (registry/install!)
-      (panel-host/install! (resource/inline "./ui/panel.css"))
+      (panel-host/install! (resource/inline "/re_frame/vertica/ui/panel.css"))
       true))
 
 (defn ^:export show-panel!

@@ -14,14 +14,18 @@
 (deftest versioned-transit-bridge
   (let [capabilities (decode (bridge/capabilities))]
     (is (= shared/protocol-version (:protocol capabilities)))
-    (is (some #{"transit-json"} (:features capabilities)))
-    (is (some #{"reagent-only-picker"} (:features capabilities)))
-    (is (some #{"reagent-component-highlights"} (:features capabilities)))
-    (is (some #{"causal-render-provenance"} (:features capabilities)))
-    (is (some #{"in-page-panel"} (:features capabilities)))
-    (is (some #{"detachable-panel"} (:features capabilities)))
+    (is (some #{:transit-json} (:features capabilities)))
+    (is (some #{:reagent-only-picker} (:features capabilities)))
+    (is (some #{:reagent-component-highlights} (:features capabilities)))
+    (is (some #{:causal-render-provenance} (:features capabilities)))
+    (is (some #{:in-page-panel} (:features capabilities)))
+    (is (some #{:detachable-panel} (:features capabilities)))
     (is (= shared/protocol-version
            (:protocol (bridge/decode-response (bridge/capabilities)))))))
+
+(deftest snapshot-preserves-kinds-used-by-panel-sections
+  (let [snapshot (decode (bridge/snapshot))]
+    (is (= #{:element} (set (map :kind (:nodes snapshot)))))))
 
 (deftest navigates-relative-dom-elements
   (let [parent #js {:id "parent"}
@@ -43,7 +47,7 @@
 
 (deftest panel-shadow-tree-is-not-inspectable
   (let [host #js {:id "__re-frame-vertica-panel"}
-        child #js {:id "pick"
+        child #js {:id "choose"
                    :getRootNode (fn [] #js {:host host})}]
     (is (picker/inspector-overlay? host))
     (is (picker/inspector-overlay? child))))

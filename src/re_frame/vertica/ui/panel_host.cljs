@@ -1,6 +1,7 @@
 (ns re-frame.vertica.ui.panel-host
   (:require [clojure.string :as str]
             [goog.object :as gobj]
+            [re-frame.vertica.shared :as shared]
             [re-frame.vertica.ui.panel :as panel]))
 
 (def panel-host-id "__re-frame-vertica-panel")
@@ -9,7 +10,7 @@
 (defn- panel-host-style [floating?]
   (->> ["all:initial"
         "position:fixed"
-        "z-index:2147483645"
+        (str "z-index:" shared/panel-z-index)
         (if floating? "inset:0" "top:0;right:0;bottom:0")
         (if floating? "width:100%" "width:min(1000px,max(560px,72vw));max-width:100vw")
         "height:100vh"
