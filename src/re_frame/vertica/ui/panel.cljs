@@ -1,5 +1,7 @@
 (ns re-frame.vertica.ui.panel
   (:require [clojure.string :as str]
+            [reagent.core :as r]
+            [reagent.dom :as rdom]
             [re-frame.vertica.bridge :as bridge]
             [re-frame.vertica.ui.edn-tokenizer :as tokenizer]
             [re-frame.vertica.ui.graph-layout :as layout]
@@ -25,74 +27,58 @@
       :expand-app-db-path (apply bridge/expand-app-db-path arguments)
       (throw (js/Error. (str "Unknown panel bridge method: " (name method)))))))
 
-(defn- query [root selector] (.querySelector root selector))
-
-(defn- element
-  ([context tag class-name] (element context tag class-name nil))
-  ([{:keys [root]} tag class-name text]
-   (let [node (.createElement (.-ownerDocument root) tag)]
-     (when (seq class-name) (set! (.-className node) class-name))
-     (when (some? text) (set! (.-textContent node) (str text)))
-     node)))
-
-(defn- append-tokenized! [{:keys [root] :as context} code text]
-  (let [document (.-ownerDocument root)
-        fragment (.createDocumentFragment document)]
-    (doseq [{:keys [text type depth]} (tokenizer/edn-tokens text)]
+(defn- token-hiccup [source]
+  (map-indexed
+    (fn [index {:keys [text type depth]}]
       (if (= :plain type)
-        (.append fragment (.createTextNode document text))
-        (let [depth-class (if (= :bracket type) (str " bracket-" (mod depth 6)) "")]
-          (.append fragment (element context "span"
-                                     (str "edn-token edn-" (name type) depth-class)
-                                     text)))))
-    (.replaceChildren code fragment)))
+        text
+        ^{:key index}
+        [:span {:class (str "edn-token edn-" (name type)
+                            (when (= :bracket type)
+                              (str " bracket-" (mod depth 6))))}
+         text]))
+    (tokenizer/edn-tokens source)))
 
-(defn- edn-code [context class-name value]
-  (let [code (element context "code" class-name)
-        source (str (or value ""))]
-    (if (>= (count source) token-threshold)
-      (do
-        (set! (.-textContent code) source)
-        (.add (.-classList code) "tokenizing")
-        (.setTimeout (:inspected-window context)
-                     (fn []
-                       (when (.-isConnected code)
-                         (append-tokenized! context code source)
-                         (.remove (.-classList code) "tokenizing")))
-                     0))
-      (append-tokenized! context code source))
-    code))
+(defn- deferred-edn-code [{:keys [inspected-window class-name source attrs]}]
+  (r/with-let [tokens (r/atom nil)
+               timer (.setTimeout inspected-window
+                                  #(reset! tokens (token-hiccup source))
+                                  0)]
+    (into [:code (merge attrs
+                        {:class (str class-name (when-not @tokens " tokenizing"))})]
+          (or @tokens [source]))
+    (finally (.clearTimeout inspected-window timer))))
+
+(defn- edn-code
+  ([context class-name value] (edn-code context class-name value nil))
+  ([context class-name value attrs]
+   (let [source (str (or value ""))]
+     (if (>= (count source) token-threshold)
+       ^{:key source}
+       [deferred-edn-code {:inspected-window (:inspected-window context)
+                           :class-name class-name
+                           :source source
+                           :attrs attrs}]
+       (into [:code (merge attrs {:class class-name})]
+             (token-hiccup source))))))
 
 (defn- component-boxes-preference [{:keys [storage]}]
   (not= "false" (when storage (.getItem storage component-boxes-setting))))
 
-(defn- update-component-boxes-button! [{:keys [elements]} enabled?]
-  (let [button (:component-boxes elements)]
-    (.setAttribute button "aria-pressed" (str (boolean enabled?)))
-    (set! (.-title button) (if enabled?
-                            "Hide Reagent component boxes"
-                            "Show Reagent component boxes"))))
+(defn- update-component-boxes-button! [{:keys [state]} enabled?]
+  (swap! state assoc :component-highlights? (boolean enabled?)))
 
-(defn- show-error! [{:keys [elements]} error]
-  (set! (.-textContent (:status elements))
-        (or (.-message error) (ex-message error) (str error))))
+(defn- show-error! [{:keys [state]} error]
+  (swap! state assoc :status-message
+         (or (.-message error) (ex-message error) (str error))))
 
 (defn- source-basename [url]
   (let [path (first (str/split (str (or url "")) #"[?#]"))
         basename (subs path (inc (or (str/last-index-of path "/") -1)))]
     (try (js/decodeURIComponent basename) (catch :default _ basename))))
 
-(defn- update-source-button! [{:keys [elements state]} location]
-  (swap! state assoc :selected-source-location location)
-  (let [button (:open-source elements)]
-    (set! (.-hidden button) (nil? location))
-    (when location
-      (let [label (str (source-basename (:url location)) ":" (:line location))
-            title (str "Open " (:component-name location) " at " (:url location)
-                       ":" (:line location) ":" (:column location))]
-        (set! (.-textContent button) (str "↗ " label))
-        (set! (.-title button) title)
-        (.setAttribute button "aria-label" title)))))
+(defn- update-source-button! [{:keys [state]} location]
+  (swap! state assoc :selected-source-location location))
 
 (defn- apply-cached-argument-names [state graph]
   (update graph :nodes
@@ -229,32 +215,29 @@
       (swap! state assoc :source-resources-loading loading)
       loading)))
 
-(defn- render-component-badges
-  ([context components] (render-component-badges context components false))
-  ([{:keys [state] :as context} components compact?]
+(defn- component-badges
+  ([context components] (component-badges context components false))
+  ([{:keys [state]} components compact?]
    (let [leaves (layout/leaf-most-components components (get-in @state [:graph :edges]))]
      (when (seq leaves)
-       (let [badges (element context "span"
-                              (str "component-badges"
-                                   (when compact? " compact-component-badges")))]
-         (.setAttribute badges "aria-label"
-                        (str "Leaf Reagent component: "
-                             (str/join "; " (map :label leaves))))
+       (into
+         [:span {:class (str "component-badges"
+                             (when compact? " compact-component-badges"))
+                 :aria-label (str "Leaf Reagent component: "
+                                  (str/join "; " (map :label leaves)))}]
          (if compact?
-           (let [labels (map #(or (:label %) "Anonymous component") leaves)
-                 badge (element context "span"
-                                "component-badge compact-component-badge"
-                                (if (= 1 (count leaves)) "C" (str "C×" (count leaves))))]
-             (set! (.-title badge)
-                   (str "Reagent component" (when (not= 1 (count leaves)) "s")
-                        ": " (str/join "; " labels)))
-             (.append badges badge))
-           (doseq [component leaves]
-             (let [badge (element context "span" "component-badge"
-                                  (or (:label component) "Anonymous component"))]
-               (set! (.-title badge) (str "Reagent component: " (:label component)))
-               (.append badges badge))))
-         badges)))))
+           (let [labels (map #(or (:label %) "Anonymous component") leaves)]
+             [[:span {:class "component-badge compact-component-badge"
+                      :title (str "Reagent component"
+                                  (when (not= 1 (count leaves)) "s")
+                                  ": " (str/join "; " labels))}
+               (if (= 1 (count leaves)) "C" (str "C×" (count leaves)))]])
+           (map (fn [component]
+                  ^{:key (:id component)}
+                  [:span {:class "component-badge"
+                          :title (str "Reagent component: " (:label component))}
+                   (or (:label component) "Anonymous component")])
+                leaves)))))))
 
 (defn- components-for-db-node [{:keys [state]} node]
   (->> (:app-db-association-patterns @state)
@@ -265,98 +248,88 @@
        (sort layout/compare-nodes)
        vec))
 
-(declare render! render-db-node)
+(declare render! db-node-view)
 
-(defn- toggle-full-value! [{:keys [state] :as context} value node showing?]
-  (when-not (.contains (.-classList value) "loading")
+(defn- toggle-full-value! [{:keys [state] :as context} node showing?]
+  (when-not (contains? (:loading-values @state) (:id node))
     (if showing?
-      (do (swap! state update :expanded-values dissoc (:id node))
-          (render! context (:graph @state) {:preserve-scroll? true}))
+      (swap! state update :expanded-values dissoc (:id node))
       (do
-        (.add (.-classList value) "loading")
-        (.setAttribute value "aria-busy" "true")
+        (swap! state update :loading-values conj (:id node))
         (try
           (let [result (call-bridge :expand-node (:token node))]
             (when-not (:ok result)
               (throw (js/Error. (or (:error result) "Unable to expand value"))))
             (swap! state assoc-in [:expanded-values (:id node)]
-                   {:token (:token node) :value (:value result)})
-            (render! context (:graph @state) {:preserve-scroll? true}))
-          (catch :default error
-            (.remove (.-classList value) "loading")
-            (.removeAttribute value "aria-busy")
-            (show-error! context error)))))))
+                   {:token (:token node) :value (:value result)}))
+          (catch :default error (show-error! context error))
+          (finally (swap! state update :loading-values disj (:id node))))))))
 
-(defn- render-node [{:keys [state] :as context} node section]
+(defn- node-view [{:keys [state] :as context} node section]
   (let [collapsed? (contains? (:collapsed-nodes @state) (:id node))
-        row (element context "article"
-                     (str "node-row " (name (:kind node))
-                          (when (false? (:complete? node)) " partial")
-                          (when collapsed? " collapsed")))]
-    (when (false? (:complete? node))
-      (set! (.-title row) (or (:reason node)
-                              "App-db provenance is incomplete for this subscription.")))
-    (.setAttribute row "data-node-id" (:id node))
-    (.setProperty (.-style row) "--depth" (str (min (or (:depth node) 0) 8)))
-    (let [content (element context "div" "node-content")
-          identity (element context "div" "identity-cell")
-          tree (element context "div" "tree-indent")]
-      (.append tree (element context "span" "kind-dot"))
-      (.append tree (edn-code context "node-identity" (:label node)))
-      (.append identity tree)
-      (when (contains? #{:subscription :prop} (:kind node))
-        (when-let [badges (render-component-badges
-                           context (get (:component-associations @state) (:id node)))]
-          (.add (.-classList badges) "subscription-component-badges")
-          (.append identity badges)))
-      (.append content identity)
+        expanded (get (:expanded-values @state) (:id node))
+        showing? (= (:token expanded) (:token node))
+        loading? (contains? (:loading-values @state) (:id node))
+        value-title (if showing?
+                      "Double-click to show the preview"
+                      "Double-click to show the complete value")]
+    [:article {:class (str "node-row " (name (:kind node))
+                           (when (false? (:complete? node)) " partial")
+                           (when collapsed? " collapsed"))
+               :title (when (false? (:complete? node))
+                        (or (:reason node)
+                            "App-db provenance is incomplete for this subscription."))
+               :data-node-id (:id node)
+               :style {"--depth" (str (min (or (:depth node) 0) 8))}}
+     [:div.node-content
+      (into
+        [:div.identity-cell
+         [:div.tree-indent
+          [:span.kind-dot]
+          (edn-code context "node-identity" (:label node))]]
+        (when (contains? #{:subscription :prop} (:kind node))
+          (when-let [badges (component-badges
+                              context (get (:component-associations @state) (:id node)))]
+            [(update badges 1 update :class str " subscription-component-badges")])))
       (when (:value section)
-        (let [value (element context "div" "value-cell")
-              expanded (get (:expanded-values @state) (:id node))
-              showing? (= (:token expanded) (:token node))]
-          (.append value (edn-code context "node-value"
-                                   (if showing? (:value expanded) (or (:preview node) "—"))))
-          (when (:preview-truncated? node)
-            (.add (.-classList value) "expandable")
-            (when showing? (.add (.-classList value) "expanded"))
-            (set! (.-title value) (if showing?
-                                   "Double-click to show the preview"
-                                   "Double-click to show the complete value"))
-            (let [more (element context "button" "value-more"
-                                (if showing? "Show less" "… Show all"))]
-              (set! (.-type more) "button")
-              (set! (.-title more) (if showing?
-                                    "Show the shortened preview"
-                                    "Show the complete value"))
-              (.addEventListener more "click"
-                                 (fn [event]
-                                   (.preventDefault event)
-                                   (.stopPropagation event)
-                                   (toggle-full-value! context value node showing?)))
-              (.append value more))
-            (set! (.-tabIndex value) 0)
-            (.addEventListener value "dblclick"
-                               (fn [event]
+        [:div {:class (str "value-cell"
+                           (when (:preview-truncated? node) " expandable")
+                           (when showing? " expanded")
+                           (when loading? " loading"))
+               :title (when (:preview-truncated? node) value-title)
+               :tab-index (when (:preview-truncated? node) 0)
+               :aria-busy (when loading? true)
+               :on-double-click (when (:preview-truncated? node)
+                                  (fn [event]
+                                    (.preventDefault event)
+                                    (toggle-full-value! context node showing?)))
+               :on-key-down (when (:preview-truncated? node)
+                              (fn [event]
+                                (when (= "Enter" (.-key event))
+                                  (.preventDefault event)
+                                  (toggle-full-value! context node showing?))))}
+         (edn-code context "node-value"
+                   (if showing? (:value expanded) (or (:preview node) "—")))
+         (when (:preview-truncated? node)
+           [:button {:type "button"
+                     :class "value-more"
+                     :title (if showing?
+                              "Show the shortened preview"
+                              "Show the complete value")
+                     :on-click (fn [event]
                                  (.preventDefault event)
-                                 (toggle-full-value! context value node showing?)))
-            (.addEventListener value "keydown"
-                               (fn [event]
-                                 (when (= "Enter" (.-key event))
-                                   (.preventDefault event)
-                                   (toggle-full-value! context value node showing?)))))
-          (.append content value)))
-      (let [toggle (element context "button" "row-toggle" (if collapsed? "+" "−"))]
-        (set! (.-type toggle) "button")
-        (set! (.-title toggle) (if collapsed? "Expand row" "Collapse row"))
-        (.setAttribute toggle "aria-label" (.-title toggle))
-        (.addEventListener toggle "click"
-                           (fn [event]
-                             (.stopPropagation event)
-                             (swap! state update :collapsed-nodes
-                                    (if collapsed? disj conj) (:id node))
-                             (render! context (:graph @state) {:preserve-scroll? true})))
-        (.append row content toggle)))
-    row))
+                                 (.stopPropagation event)
+                                 (toggle-full-value! context node showing?))}
+            (if showing? "Show less" "… Show all")])])]
+     [:button {:type "button"
+               :class "row-toggle"
+               :title (if collapsed? "Expand row" "Collapse row")
+               :aria-label (if collapsed? "Expand row" "Collapse row")
+               :on-click (fn [event]
+                           (.stopPropagation event)
+                           (swap! state update :collapsed-nodes
+                                  (if collapsed? disj conj) (:id node)))}
+      (if collapsed? "+" "−")]]))
 
 (defn- db-node-state [node]
   (cond
@@ -379,20 +352,18 @@
          :expanded-default-db-paths #{}
          :expanded-db-values {}))
 
-(defn- toggle-db-node! [{:keys [state] :as context} path collapsed?]
+(defn- toggle-db-node! [{:keys [state]} path collapsed?]
   (if collapsed?
     (swap! state #(-> %
                       (update :collapsed-db-paths disj path)
                       (update :expanded-default-db-paths conj path)))
     (swap! state #(-> %
                       (update :expanded-default-db-paths disj path)
-                      (update :collapsed-db-paths conj path))))
-  (render! context (:graph @state) {:preserve-scroll? true}))
+                      (update :collapsed-db-paths conj path)))))
 
 (defn- render-db-value [context text path class-name]
-  (let [value (element context "span" (str "db-tree-value " class-name))]
-    (.append value (edn-code context "db-tree-code" text))
-    value))
+  [:span {:class (str "db-tree-value " class-name)}
+   (edn-code context "db-tree-code" text {:data-path path})])
 
 (defn- replace-db-branch [node path replacement]
   (cond
@@ -402,237 +373,214 @@
                   (fn [children]
                     (mapv #(update % :node replace-db-branch path replacement) children)))))
 
-(defn- load-more-db-context! [{:keys [state] :as context} button path visible-count]
-  (when-not (.contains (.-classList button) "loading")
-    (.add (.-classList button) "loading")
-    (set! (.-disabled button) true)
+(defn- load-more-db-context! [{:keys [state] :as context} path visible-count]
+  (when-not (contains? (:loading-db-paths @state) path)
+    (swap! state update :loading-db-paths conj path)
     (try
       (let [result (call-bridge :expand-app-db-path path (or visible-count 0))]
         (when-not (:ok result)
           (throw (js/Error. (or (:error result) "Unable to load more app-db context"))))
         (swap! state update-in [:graph :app-db-tree]
-               replace-db-branch path (:node result))
-        (render! context (:graph @state) {:preserve-scroll? true}))
-      (catch :default error
-        (.remove (.-classList button) "loading")
-        (set! (.-disabled button) false)
-        (show-error! context error)))))
+               replace-db-branch path (:node result)))
+      (catch :default error (show-error! context error))
+      (finally (swap! state update :loading-db-paths disj path)))))
 
-(defn- toggle-full-db-value! [{:keys [state] :as context} button node path showing?]
-  (when-not (.contains (.-classList button) "loading")
+(defn- toggle-full-db-value! [{:keys [state] :as context} path showing?]
+  (when-not (contains? (:loading-db-paths @state) path)
     (if showing?
-      (do (swap! state update :expanded-db-values dissoc path)
-          (render! context (:graph @state) {:preserve-scroll? true}))
+      (swap! state update :expanded-db-values dissoc path)
       (do
-        (.add (.-classList button) "loading")
-        (set! (.-disabled button) true)
+        (swap! state update :loading-db-paths conj path)
         (try
           (let [result (call-bridge :expand-app-db-path path)]
             (when (or (not (:ok result)) (nil? (:value result)))
               (throw (js/Error. (or (:error result) "Unable to expand app-db value"))))
-            (swap! state assoc-in [:expanded-db-values path] (:value result))
-            (render! context (:graph @state) {:preserve-scroll? true}))
-          (catch :default error
-            (.remove (.-classList button) "loading")
-            (set! (.-disabled button) false)
-            (show-error! context error)))))))
+            (swap! state assoc-in [:expanded-db-values path] (:value result)))
+          (catch :default error (show-error! context error))
+          (finally (swap! state update :loading-db-paths disj path)))))))
 
-(defn- render-compact-db-vector-entry [{:keys [state] :as context} node key-label]
+(defn- compact-db-vector-entry [{:keys [state] :as context} node key-label]
   (let [path (or (:path-label node) "[]")
-        entry (element context "div" (str "db-vector-entry " (name (db-node-state node))))
         path-title (str "app-db " path)
-        key-code (edn-code context "db-tree-code db-tree-key db-vector-key" key-label)]
-    (set! (.-title entry) path-title)
-    (set! (.. key-code -dataset -path) path)
-    (set! (.-title key-code) path-title)
-    (.append entry key-code)
-    (let [full-value (get (:expanded-db-values @state) path)
-          showing? (some? full-value)]
-      (.append entry (render-db-value context
-                                      (if showing? full-value (or (:text node) "nil"))
-                                      path
-                                      (str "leaf-value" (when showing? " expanded"))))
-      (when (:preview-truncated? node)
-        (let [more (element context "button" "db-value-more"
-                            (if showing? "Less" "All"))]
-          (set! (.-type more) "button")
-          (set! (.-title more) (if showing?
-                                (str "Collapse app-db value " path)
-                                (str "Show complete app-db value " path)))
-          (.setAttribute more "aria-label" (.-title more))
-          (.addEventListener more "click"
-                             #(toggle-full-db-value! context more node path showing?))
-          (.append entry more)))
-      (when-let [badges (render-component-badges
-                         context (components-for-db-node context node) true)]
-        (.append entry badges)))
-    entry))
+        full-value (get (:expanded-db-values @state) path)
+        showing? (some? full-value)
+        loading? (contains? (:loading-db-paths @state) path)]
+    (into
+      [:div {:class (str "db-vector-entry " (name (db-node-state node)))
+             :title path-title}
+       (edn-code context "db-tree-code db-tree-key db-vector-key" key-label
+                 {:data-path path :title path-title})
+       (render-db-value context
+                        (if showing? full-value (or (:text node) "nil"))
+                        path
+                        (str "leaf-value" (when showing? " expanded")))
+       (when (:preview-truncated? node)
+         [:button {:type "button"
+                   :class (str "db-value-more" (when loading? " loading"))
+                   :disabled loading?
+                   :title (if showing?
+                            (str "Collapse app-db value " path)
+                            (str "Show complete app-db value " path))
+                   :aria-label (if showing?
+                                 (str "Collapse app-db value " path)
+                                 (str "Show complete app-db value " path))
+                   :on-click #(toggle-full-db-value! context path showing?)}
+          (if showing? "Less" "All")])]
+      (when-let [badges (component-badges
+                          context (components-for-db-node context node) true)]
+        [badges]))))
 
-(defn- render-db-node
-  ([context node] (render-db-node context node nil 0))
+(defn- db-node-children [context node depth]
+  (let [children
+        (if (= :vector (:kind node))
+          (mapcat
+            (fn [{:keys [layout entries]}]
+              (if (= :compact layout)
+                [[:div {:class "db-vector-entries"
+                        :style {"--db-depth" (str (inc depth))}
+                        :key (str "compact-" (:path-label (:node (first entries))))}
+                  (for [{:keys [node key]} entries]
+                    ^{:key (:path-label node)}
+                    [compact-db-vector-entry context node key])]]
+                (for [{:keys [node key]} entries]
+                  ^{:key (:path-label node)}
+                  [db-node-view context node key (inc depth)])))
+            (layout/group-db-vector-entries (:children node)))
+          (for [{:keys [node key]} (:children node)]
+            ^{:key (:path-label node)}
+            [db-node-view context node key (inc depth)]))]
+    (into [:div.db-tree-children] children)))
+
+(defn- db-node-view
+  ([context node] (db-node-view context node nil 0))
   ([{:keys [state] :as context} node key-label depth]
    (let [path (or (:path-label node) "[]")
          collection? (db-collection? node)
          collapsed? (and collection? (db-node-collapsed? @state node path))
          default-collapsed? (and collection? (layout/db-collection-starts-collapsed? node))
-         branch (element context "div"
-                         (str "db-tree-node " (name (db-node-state node))
-                              (when collapsed? " collapsed")))
-         line (element context "div" "db-tree-line")]
-     (.setProperty (.-style line) "--db-depth" (str depth))
-     (if (= :ellipsis (:kind node))
-       (do
-         (.append line (element context "span" "db-tree-toggle-spacer"))
-         (let [more (element context "button" "db-tree-more" (or (:text node) "… more"))]
-           (set! (.-type more) "button")
-           (set! (.-title more) (str "Load more entries from " path))
-           (.addEventListener more "click"
-                              #(load-more-db-context! context more path (:visible-count node)))
-           (.append line more))
-         (.append branch line))
-       (do
-         (if collection?
-           (let [toggle (element context "button" "db-tree-toggle"
-                                 (if collapsed? "+" "−"))]
-             (set! (.-type toggle) "button")
-             (set! (.-title toggle) (str (if collapsed? "Expand " "Collapse ") path))
-             (.setAttribute toggle "aria-label" (.-title toggle))
-             (.addEventListener toggle "click"
-                                #(toggle-db-node! context path collapsed?))
-             (.append line toggle))
-           (.append line (element context "span" "db-tree-toggle-spacer")))
-         (when (some? key-label)
-           (let [key-code (edn-code context "db-tree-code db-tree-key" key-label)]
-             (set! (.. key-code -dataset -path) path)
-             (set! (.-title key-code) (str "app-db " path))
-             (.append line key-code)))
-         (if (= :summary (:kind node))
-           (let [summary (element context "button" "db-tree-summary" (or (:text node) "…"))]
-             (set! (.-type summary) "button")
-             (set! (.-title summary) (str "Load entries from " path))
-             (.setAttribute summary "aria-label" (.-title summary))
-             (.addEventListener summary "click"
-                                #(load-more-db-context! context summary path 0))
-             (.append line summary))
-           (let [full-value (get (:expanded-db-values @state) path)
-                 showing? (some? full-value)]
-             (.append line (render-db-value
-                             context
-                             (if collection? (:open node)
-                                 (if showing? full-value (or (:text node) "nil")))
-                             path
-                             (if collection? "collection-value" "leaf-value")))
-             (when (:preview-truncated? node)
-               (let [more (element context "button" "db-value-more"
-                                   (if showing? "Show less" "… Show all"))]
-                 (set! (.-type more) "button")
-                 (set! (.-title more) (if showing?
-                                       (str "Collapse app-db value " path)
-                                       (str "Show complete app-db value " path)))
-                 (.addEventListener more "click"
-                                    #(toggle-full-db-value! context more node path showing?))
-                 (.append line more)))))
-         (when (and collection? collapsed?)
-           (let [text (if default-collapsed?
-                        (str "… " (:child-count node) " involved") "…")
-                 mark (element context "button" "db-tree-collapsed-mark" text)]
-             (set! (.-type mark) "button")
-             (set! (.-title mark)
-                   (if default-collapsed?
-                     (str "Expand " path "; all " (:child-count node) " entries contribute")
-                     (str "Expand " path)))
-             (.addEventListener mark "click" #(toggle-db-node! context path true))
-             (.append line mark)))
-         (when-let [badges (render-component-badges
-                            context (components-for-db-node context node))]
-           (.append line badges))
-         (.append branch line)
-         (when (and collection? (not collapsed?))
-           (let [children (element context "div" "db-tree-children")]
-             (if (= :vector (:kind node))
-               (doseq [{:keys [layout entries] :as group}
-                       (layout/group-db-vector-entries (:children node))]
-                 (if (= :compact layout)
-                   (let [compact (element context "div" "db-vector-entries")]
-                     (.setProperty (.-style compact) "--db-depth" (str (inc depth)))
-                     (doseq [entry entries]
-                       (.append compact (render-compact-db-vector-entry
-                                          context (:node entry) (:key entry))))
-                     (.append children compact))
-                   (doseq [entry (:entries group)]
-                     (.append children (render-db-node
-                                         context (:node entry) (:key entry) (inc depth))))))
-               (doseq [entry (:children node)]
-                 (.append children (render-db-node
-                                     context (:node entry) (:key entry) (inc depth)))))
-             (.append branch children)
-             (let [close-line (element context "div" "db-tree-line db-tree-close")]
-               (.setProperty (.-style close-line) "--db-depth" (str depth))
-               (.append close-line (element context "span" "db-tree-toggle-spacer"))
-               (.append close-line (render-db-value context (:close node) path "collection-value"))
-               (.append branch close-line))))))
-     branch)))
+         full-value (get (:expanded-db-values @state) path)
+         showing? (some? full-value)
+         loading? (contains? (:loading-db-paths @state) path)
+         toggle-title (str (if collapsed? "Expand " "Collapse ") path)
+         line
+         (if (= :ellipsis (:kind node))
+           [:div {:class "db-tree-line" :style {"--db-depth" (str depth)}}
+            [:span.db-tree-toggle-spacer]
+            [:button {:type "button"
+                      :class (str "db-tree-more" (when loading? " loading"))
+                      :disabled loading?
+                      :title (str "Load more entries from " path)
+                      :on-click #(load-more-db-context!
+                                   context path (:visible-count node))}
+             (or (:text node) "… more")]]
+           (into
+             [:div {:class "db-tree-line" :style {"--db-depth" (str depth)}}
+              (if collection?
+                [:button {:type "button"
+                          :class "db-tree-toggle"
+                          :title toggle-title
+                          :aria-label toggle-title
+                          :on-click #(toggle-db-node! context path collapsed?)}
+                 (if collapsed? "+" "−")]
+                [:span.db-tree-toggle-spacer])
+              (when (some? key-label)
+                (edn-code context "db-tree-code db-tree-key" key-label
+                          {:data-path path :title (str "app-db " path)}))
+              (if (= :summary (:kind node))
+                [:button {:type "button"
+                          :class (str "db-tree-summary" (when loading? " loading"))
+                          :disabled loading?
+                          :title (str "Load entries from " path)
+                          :aria-label (str "Load entries from " path)
+                          :on-click #(load-more-db-context! context path 0)}
+                 (or (:text node) "…")]
+                (render-db-value
+                  context
+                  (if collection? (:open node)
+                      (if showing? full-value (or (:text node) "nil")))
+                  path
+                  (if collection? "collection-value" "leaf-value")))
+              (when (:preview-truncated? node)
+                [:button {:type "button"
+                          :class (str "db-value-more" (when loading? " loading"))
+                          :disabled loading?
+                          :title (if showing?
+                                   (str "Collapse app-db value " path)
+                                   (str "Show complete app-db value " path))
+                          :on-click #(toggle-full-db-value! context path showing?)}
+                 (if showing? "Show less" "… Show all")])
+              (when (and collection? collapsed?)
+                [:button {:type "button"
+                          :class "db-tree-collapsed-mark"
+                          :title (if default-collapsed?
+                                   (str "Expand " path "; all " (:child-count node)
+                                        " entries contribute")
+                                   (str "Expand " path))
+                          :on-click #(toggle-db-node! context path true)}
+                 (if default-collapsed?
+                   (str "… " (:child-count node) " involved")
+                   "…")])]
+             (when-let [badges (component-badges
+                                 context (components-for-db-node context node))]
+               [badges])))]
+     (cond-> [:div {:class (str "db-tree-node " (name (db-node-state node))
+                                (when collapsed? " collapsed"))}
+              line]
+       (and collection? (not collapsed?))
+       (conj (db-node-children context node depth)
+             [:div {:class "db-tree-line db-tree-close"
+                    :style {"--db-depth" (str depth)}}
+              [:span.db-tree-toggle-spacer]
+              (render-db-value context (:close node) path "collection-value")])))))
 
-(defn- render-app-db-section [context section app-db-tree]
-  (let [container (element context "section"
-                           (str "graph-section " (name (:kind section)) " db-tree-section"))
-        header (element context "header" "section-header")
-        heading (element context "h2" "section-title" (:title section))]
-    (.append heading (element context "span" "section-count" (count (:nodes section))))
-    (.append header heading)
-    (.append container header)
-    (when (and (seq (:nodes section)) app-db-tree)
-      (let [tree (element context "div" "db-tree")]
-        (.append tree (render-db-node context app-db-tree))
-        (.append container tree)))
-    container))
+(defn- app-db-section [context section app-db-tree]
+  [:section {:class (str "graph-section " (name (:kind section)) " db-tree-section")}
+   [:header.section-header
+    [:h2.section-title
+     (:title section)
+     [:span.section-count (count (:nodes section))]]]
+   (when (and (seq (:nodes section)) app-db-tree)
+     [:div.db-tree [db-node-view context app-db-tree]])])
 
-(defn- render-section [{:keys [state] :as context} section graph]
+(defn- section-view [{:keys [state] :as context} section graph]
   (if (= :app-db-path (:kind section))
-    (render-app-db-section context section (:app-db-tree graph))
-    (let [container (element context "section"
-                             (str "graph-section " (name (:kind section))
-                                  (if (:value section) " has-values" " single-column")))
-          header (element context "header" "section-header")
-          heading (element context "h2" "section-title" (:title section))]
-      (.append heading (element context "span" "section-count" (count (:nodes section))))
-      (.append header heading)
-      (.append container header)
-      (when (seq (:nodes section))
-        (let [columns (element context "div" "column-headings")]
-          (.append columns (element context "span" "identity-heading" (:identity section)))
-          (when (:value section)
-            (.append columns (element context "span" "value-heading" (:value section))))
-          (.append container columns))
-        (if (:levels section)
-          (doseq [{:keys [level nodes]} (:levels section)]
-            (let [collapsed? (contains? (:collapsed-subscription-levels @state) level)
-                  group (element context "div"
-                                 (str "subscription-level" (when collapsed? " collapsed")))
-                  level-header (element context "button" "level-header")]
-              (set! (.-type level-header) "button")
-              (set! (.-title level-header)
-                    (str (if collapsed? "Expand" "Collapse") " subscription level " level))
-              (.setAttribute level-header "aria-expanded" (str (not collapsed?)))
-              (.append level-header (element context "span" "level-chevron"
-                                               (if collapsed? "▸" "▾")))
-              (.append level-header (element context "span" "level-title" (str "LEVEL " level)))
-              (.append level-header (element context "span" "level-count" (count nodes)))
-              (.addEventListener level-header "click"
-                                 (fn []
-                                   (swap! state update :collapsed-subscription-levels
-                                          (if collapsed? disj conj) level)
-                                   (render! context (:graph @state) {:preserve-scroll? true})))
-              (.append group level-header)
-              (when-not collapsed?
-                (let [rows (element context "div" "section-rows")]
-                  (doseq [node nodes] (.append rows (render-node context node section)))
-                  (.append group rows)))
-              (.append container group)))
-          (let [rows (element context "div" "section-rows")]
-            (doseq [node (:nodes section)] (.append rows (render-node context node section)))
-            (.append container rows))))
-      container)))
+    [app-db-section context section (:app-db-tree graph)]
+    [:section {:class (str "graph-section " (name (:kind section))
+                           (if (:value section) " has-values" " single-column"))}
+     [:header.section-header
+      [:h2.section-title
+       (:title section)
+       [:span.section-count (count (:nodes section))]]]
+     (when (seq (:nodes section))
+       [:div.column-headings
+        [:span.identity-heading (:identity section)]
+        (when (:value section)
+          [:span.value-heading (:value section)])])
+     (when (seq (:nodes section))
+       (if (:levels section)
+         (for [{:keys [level nodes]} (:levels section)
+               :let [collapsed? (contains? (:collapsed-subscription-levels @state) level)]]
+           ^{:key level}
+           [:div {:class (str "subscription-level" (when collapsed? " collapsed"))}
+            [:button {:type "button"
+                      :class "level-header"
+                      :title (str (if collapsed? "Expand" "Collapse")
+                                  " subscription level " level)
+                      :aria-expanded (not collapsed?)
+                      :on-click #(swap! state update :collapsed-subscription-levels
+                                        (if collapsed? disj conj) level)}
+             [:span.level-chevron (if collapsed? "▸" "▾")]
+             [:span.level-title (str "LEVEL " level)]
+             [:span.level-count (count nodes)]]
+            (when-not collapsed?
+              (into [:div.section-rows]
+                    (map (fn [node]
+                           ^{:key (:id node)} [node-view context node section])
+                         nodes)))])
+         (into [:div.section-rows]
+               (map (fn [node]
+                      ^{:key (:id node)} [node-view context node section])
+                    (:nodes section)))))]))
 
 (defn- sync-subscription-level-state! [state sections nodes]
   (let [selection-id (:id (first (filter #(= :element (:kind %)) nodes)))
@@ -654,18 +602,13 @@
                  (assoc current :collapsed-subscription-levels (into retained added))))))
     (swap! state assoc :known-subscription-levels levels)))
 
-(defn- update-navigation! [{:keys [state elements]} navigation]
-  (doseq [button (:navigation elements)]
-    (set! (.-disabled button)
-          (or (not (:bridge-ready? @state))
-              (:navigation-running? @state)
-              (not (get navigation (keyword (.. button -dataset -direction))))))))
+(defn- update-navigation! [{:keys [state]} navigation]
+  (swap! state assoc :navigation (or navigation {})))
 
 (defn- render!
   ([context graph] (render! context graph {}))
-  ([{:keys [state elements] :as context} next-graph {:keys [preserve-scroll?]}]
-   (let [canvas (:canvas elements)
-         scroll-top (.-scrollTop canvas)
+  ([{:keys [state canvas] :as context} next-graph {:keys [preserve-scroll?]}]
+   (let [canvas-element @canvas
          next-graph (apply-cached-argument-names @state next-graph)
          nodes (or (:nodes next-graph) [])
          edges (or (:edges next-graph) [])
@@ -675,7 +618,12 @@
                             (some #(and (= :element (:kind %))
                                         (not= "No element" (:label %))) nodes))
          next-generation (:selection-generation next-graph)]
-     (swap! state assoc :graph next-graph)
+     (swap! state assoc
+            :graph next-graph
+            :sections sections
+            :has-selection? (boolean has-selection?)
+            :empty-message select-element-message
+            :navigation (or (:navigation next-graph) {}))
      (sync-subscription-level-state! state sections nodes)
      (let [associations (layout/build-component-associations nodes edges)]
        (swap! state assoc
@@ -691,8 +639,6 @@
                 (not= next-generation (:db-selection-generation @state)))
        (reset-app-db-view-state! state)
        (swap! state assoc :db-selection-generation next-generation))
-     (update-navigation! context (:navigation next-graph))
-     (set! (.-hidden (:empty elements)) (boolean has-selection?))
      (swap! state update :collapsed-nodes
             #(set (filter (set (map :id nodes)) %)))
      (swap! state update :expanded-values
@@ -700,18 +646,15 @@
               (let [by-id (into {} (map (juxt :id identity)) nodes)]
                 (into {} (filter (fn [[id cached]]
                                    (= (:token cached) (:token (get by-id id))))) expanded))))
-     (.replaceChildren (:graph elements))
-     (doseq [section sections]
-       (.append (:graph elements) (render-section context section next-graph)))
      (let [warnings (:warnings next-graph)]
-       (set! (.-textContent (:status elements))
-             (if (seq warnings)
-               (str/join " · " (map :message warnings))
-               (str "Connected · " (count nodes) " nodes"))))
-     (if preserve-scroll?
-       (set! (.-scrollTop canvas) scroll-top)
-       (when (not= selected (:last-selection @state))
-         (.scrollTo canvas #js {:top 0 :left 0})))
+       (swap! state assoc :status-message
+              (if (seq warnings)
+                (str/join " · " (map :message warnings))
+                (str "Connected · " (count nodes) " nodes"))))
+     (when (and (not preserve-scroll?)
+                canvas-element
+                (not= selected (:last-selection @state)))
+       (.scrollTo canvas-element #js {:top 0 :left 0}))
      (swap! state assoc :last-selection selected)
      (resolve-visible-argument-names! context)
      (resolve-selection-source-location! context))))
@@ -727,26 +670,23 @@
          (when (number? next-revision)
            (swap! state assoc :revision next-revision)))))))
 
-(defn- update-bridge-state! [{:keys [state root elements] :as context} ready? message]
+(defn- update-bridge-state! [{:keys [state] :as context} ready? message]
   (swap! state assoc :bridge-ready? ready?)
-  (.toggle (.-classList root) "preload-missing" (not ready?))
-  (set! (.-disabled (:pick elements)) (not ready?))
-  (set! (.-disabled (:component-boxes elements)) (not ready?))
-  (set! (.-disabled (:refresh elements))
-        (or (not ready?) (:refresh-running? @state)))
   (if-not ready?
     (do
-      (swap! state assoc :graph nil :revision -1 :db-selection-generation nil)
+      (swap! state assoc
+             :graph nil
+             :sections []
+             :revision -1
+             :db-selection-generation nil
+             :has-selection? false
+             :empty-message
+             "This app may be missing re-frame.vertica.preload. Add it to the development build, restart the build, and reload the page.")
       (reset-app-db-view-state! state)
-      (.replaceChildren (:graph elements))
-      (set! (.-hidden (:empty elements)) false)
-      (set! (.-textContent (:empty elements))
-            "This app may be missing re-frame.vertica.preload. Add it to the development build, restart the build, and reload the page.")
       (update-source-button! context nil))
     (when-not (:graph @state)
-      (set! (.-hidden (:empty elements)) false)
-      (set! (.-textContent (:empty elements)) select-element-message)))
-  (when (seq message) (set! (.-textContent (:status elements)) message))
+      (swap! state assoc :has-selection? false :empty-message select-element-message)))
+  (when (seq message) (swap! state assoc :status-message message))
   (update-navigation! context (get-in @state [:graph :navigation])))
 
 (defn- navigate-selected! [{:keys [state] :as context} direction]
@@ -783,23 +723,18 @@
         (update-bridge-state! context false (or (.-message error) (str error))))
       (finally (swap! state assoc :connection-running? false)))))
 
-(defn- refresh-inspector! [{:keys [state elements] :as context}]
+(defn- refresh-inspector! [{:keys [state] :as context}]
   (when-not (:refresh-running? @state)
-    (swap! state assoc :refresh-running? true)
-    (set! (.-disabled (:refresh elements)) true)
-    (.add (.-classList (:refresh elements)) "loading")
-    (.setAttribute (:refresh elements) "aria-busy" "true")
-    (set! (.-textContent (:status elements)) "Refreshing provenance and source maps…")
+    (swap! state assoc
+           :refresh-running? true
+           :status-message "Refreshing provenance and source maps…")
     (-> (load-source-resources! context)
         (.then (fn [_]
                  (render-snapshot! context (call-bridge :snapshot)
                                    {:preserve-scroll? true})))
         (.catch #(show-error! context %))
         (.finally (fn []
-                    (swap! state assoc :refresh-running? false)
-                    (set! (.-disabled (:refresh elements)) false)
-                    (.remove (.-classList (:refresh elements)) "loading")
-                    (.removeAttribute (:refresh elements) "aria-busy"))))))
+                    (swap! state assoc :refresh-running? false))))))
 
 (declare poll!)
 
@@ -808,7 +743,7 @@
     (swap! state assoc :poll-timer
            (.setTimeout inspected-window #(poll! context) poll-interval))))
 
-(defn- poll! [{:keys [state elements on-picking-change] :as context}]
+(defn- poll! [{:keys [state on-picking-change] :as context}]
   (try
     (if-not (:bridge-ready? @state)
       (connect! context)
@@ -816,9 +751,7 @@
         (if-not status
           (update-bridge-state! context false (protocol/compatibility-message nil))
           (do
-            (set! (.. (:pick elements) -dataset -active) (str (boolean (:picker-active status))))
-            (set! (.-textContent (:pick elements))
-                  (if (:picker-active status) "× Cancel" "⌖ Pick"))
+            (swap! state assoc :picker-active? (boolean (:picker-active status)))
             (on-picking-change (boolean (:picker-active status)))
             (update-component-boxes-button!
               context (boolean (:component-highlights status)))
@@ -836,119 +769,200 @@
     (schedule-poll! context)))
 
 (defn stop! [{:keys [state inspected-window on-picking-change]}]
-  (swap! state assoc :running? false)
+  (swap! state assoc :running? false :picker-active? false)
   (when-let [timer (:poll-timer @state)] (.clearTimeout inspected-window timer))
   (swap! state assoc :poll-timer nil)
   (on-picking-change false)
   (try (call-bridge :stop-picker) (catch :default _))
   (try (call-bridge :set-component-highlights false) (catch :default _)))
 
-(defn set-floating! [{:keys [elements]} floating?]
-  (let [button (:detach elements)]
-    (set! (.-textContent button) (if floating? "↙ Attach" "↗ Detach"))
-    (set! (.-title button) (if floating?
-                            "Attach the panel to the application"
-                            "Detach the panel into a floating window"))
-    (.setAttribute button "aria-label" (.-title button))))
+(defn set-floating! [{:keys [state]} floating?]
+  (swap! state assoc :floating? (boolean floating?)))
 
-(defn set-status! [{:keys [elements]} message]
-  (set! (.-textContent (:status elements)) message))
+(defn set-status! [{:keys [state]} message]
+  (swap! state assoc :status-message message))
+
+(defn- open-selected-source! [{:keys [state open-source] :as context}]
+  (when-let [location (:selected-source-location @state)]
+    (try
+      (open-source (:url location) location)
+      (catch :default error (show-error! context error)))))
+
+(defn- toggle-component-boxes! [{:keys [state storage] :as context}]
+  (let [enabled? (not (:component-highlights? @state))]
+    (when storage
+      (try (.setItem storage component-boxes-setting (str enabled?))
+           (catch :default _)))
+    (update-component-boxes-button! context enabled?)
+    (try
+      (let [status (call-bridge :set-component-highlights enabled?)]
+        (update-component-boxes-button!
+          context (boolean (:component-highlights status))))
+      (catch :default error (show-error! context error)))))
+
+(defn- toggle-picker! [{:keys [state on-picking-change] :as context}]
+  (try
+    (let [status (call-bridge (if (:picker-active? @state)
+                                :stop-picker
+                                :start-picker))
+          active? (boolean (:picker-active status))]
+      (swap! state assoc :picker-active? active?)
+      (update-component-boxes-button!
+        context (boolean (:component-highlights status)))
+      (update-navigation! context (:navigation status))
+      (on-picking-change active?))
+    (catch :default error (show-error! context error))))
+
+(def ^:private navigation-controls
+  [[:parent "↑" "Select parent element"]
+   [:child "↓" "Select first child element"]
+   [:previous "←" "Select previous sibling"]
+   [:next "→" "Select next sibling"]])
+
+(defn- panel-view
+  [{:keys [state canvas on-close on-detach] :as context}]
+  (let [{:keys [bridge-ready? component-highlights? empty-message floating? graph
+                has-selection? navigation navigation-running? picker-active?
+                refresh-running? sections selected-source-location status-message]}
+        @state
+        source-title (when selected-source-location
+                       (str "Open " (:component-name selected-source-location)
+                            " at " (:url selected-source-location)
+                            ":" (:line selected-source-location)
+                            ":" (:column selected-source-location)))
+        detach-title (if floating?
+                       "Attach the panel to the application"
+                       "Detach the panel into a floating window")]
+    [:div {:class (str "panel-shell" (when-not bridge-ready? " preload-missing"))}
+     [:header
+      [:strong "re-frame.vertica"]
+      [:span#status status-message]
+      [:div#tree-nav {:role "group" :aria-label "Navigate selected DOM element"}
+       (for [[direction label title] navigation-controls]
+         ^{:key direction}
+         [:button {:type "button"
+                   :data-direction (name direction)
+                   :title title
+                   :aria-label title
+                   :disabled (or (not bridge-ready?)
+                                 navigation-running?
+                                 (not (get navigation direction)))
+                   :on-click #(navigate-selected! context direction)}
+          label])]
+      [:button#open-source
+       {:type "button"
+        :hidden (nil? selected-source-location)
+        :title source-title
+        :aria-label source-title
+        :on-click #(open-selected-source! context)}
+       (when selected-source-location
+         (str "↗ " (source-basename (:url selected-source-location))
+              ":" (:line selected-source-location)))]
+      [:button#refresh
+       {:type "button"
+        :class (when refresh-running? "loading")
+        :disabled (or (not bridge-ready?) refresh-running?)
+        :aria-busy refresh-running?
+        :title "Refresh provenance and source-map argument names"
+        :on-click #(refresh-inspector! context)}
+       "↻ Refresh"]
+      [:button#component-boxes
+       {:type "button"
+        :aria-pressed component-highlights?
+        :disabled (not bridge-ready?)
+        :title (if component-highlights?
+                 "Hide Reagent component boxes"
+                 "Show Reagent component boxes")
+        :on-click #(toggle-component-boxes! context)}
+       "◇ Boxes"]
+      [:button#pick
+       {:type "button"
+        :data-active picker-active?
+        :disabled (not bridge-ready?)
+        :title "Pick an element in the page"
+        :on-click #(toggle-picker! context)}
+       (if picker-active? "× Cancel" "⌖ Pick")]
+      [:button#detach
+       {:type "button"
+        :title detach-title
+        :aria-label detach-title
+        :on-click on-detach}
+       (if floating? "↙ Attach" "↗ Detach")]
+      [:button#close
+       {:type "button"
+        :title "Close panel (Ctrl+Shift+V)"
+        :aria-label "Close panel"
+        :on-click on-close}
+       "×"]]
+     [:main
+      [:section#canvas-wrap
+       {:ref #(reset! canvas %)}
+       (into
+         [:div#graph
+          {:role "region"
+           :aria-label "re-frame data flow from app-db paths to the selected element"}]
+         (map (fn [section]
+                ^{:key (:kind section)} [section-view context section graph])
+              sections))
+       [:div#empty {:hidden has-selection?} empty-message]]]]))
 
 (defn mount!
-  [{:keys [root storage inspected-document inspected-window
+  [{:keys [mount-node storage inspected-document inspected-window
            on-close on-detach on-picking-change open-source]
     :or {on-close (fn [])
          on-detach (fn [])
          on-picking-change (fn [_])}}]
-  (let [elements {:status (query root "#status")
-                  :empty (query root "#empty")
-                  :graph (query root "#graph")
-                  :canvas (query root "#canvas-wrap")
-                  :pick (query root "#pick")
-                  :refresh (query root "#refresh")
-                  :component-boxes (query root "#component-boxes")
-                  :open-source (query root "#open-source")
-                  :detach (query root "#detach")
-                  :close (query root "#close")
-                  :navigation (array-seq (.querySelectorAll root "#tree-nav [data-direction]"))}
-        state (atom {:graph nil
-                     :revision -1
-                     :collapsed-nodes #{}
-                     :collapsed-db-paths #{}
-                     :expanded-default-db-paths #{}
-                     :collapsed-subscription-levels #{}
-                     :known-subscription-levels #{}
-                     :subscription-levels-initialized? false
-                     :subscription-selection-id nil
-                     :db-selection-generation nil
-                     :expanded-values {}
-                     :expanded-db-values {}
-                     :last-selection nil
-                     :source-index {}
-                     :argument-name-cache {}
-                     :loaded-source-urls #{}
-                     :source-resources-ready? false
-                     :source-resources-loading nil
-                     :selected-source-location nil
-                     :poll-timer nil
-                     :running? false
-                     :bridge-ready? false
-                     :connection-running? false
-                     :navigation-running? false
-                     :refresh-running? false
-                     :component-associations {}
-                     :app-db-association-patterns []})
+  (let [state (r/atom {:graph nil
+                       :sections []
+                       :revision -1
+                       :collapsed-nodes #{}
+                       :collapsed-db-paths #{}
+                       :expanded-default-db-paths #{}
+                       :collapsed-subscription-levels #{}
+                       :known-subscription-levels #{}
+                       :subscription-levels-initialized? false
+                       :subscription-selection-id nil
+                       :db-selection-generation nil
+                       :expanded-values {}
+                       :expanded-db-values {}
+                       :loading-values #{}
+                       :loading-db-paths #{}
+                       :last-selection nil
+                       :source-index {}
+                       :argument-name-cache {}
+                       :loaded-source-urls #{}
+                       :source-resources-ready? false
+                       :source-resources-loading nil
+                       :selected-source-location nil
+                       :poll-timer nil
+                       :running? false
+                       :bridge-ready? false
+                       :connection-running? false
+                       :navigation-running? false
+                       :refresh-running? false
+                       :picker-active? false
+                       :floating? false
+                       :has-selection? false
+                       :empty-message select-element-message
+                       :status-message "Ready"
+                       :navigation {}
+                       :component-highlights?
+                       (component-boxes-preference {:storage storage})
+                       :component-associations {}
+                       :app-db-association-patterns []})
+        canvas (atom nil)
         context* (atom nil)
-        context {:root root
+        context {:mount-node mount-node
                  :storage storage
                  :inspected-document inspected-document
                  :inspected-window inspected-window
                  :on-picking-change on-picking-change
+                 :on-close on-close
+                 :on-detach on-detach
                  :open-source open-source
-                 :elements elements
+                 :canvas canvas
                  :state state
                  :render! (fn [graph options] (render! @context* graph options))}]
     (reset! context* context)
-    (doseq [button (:navigation elements)]
-      (.addEventListener button "click"
-                         #(navigate-selected! context
-                                              (keyword (.. button -dataset -direction)))))
-    (update-navigation! context {})
-    (update-component-boxes-button! context (component-boxes-preference context))
-    (.addEventListener (:refresh elements) "click" #(refresh-inspector! context))
-    (.addEventListener (:open-source elements) "click"
-                       (fn []
-                         (when-let [location (:selected-source-location @state)]
-                           (try (open-source (:url location) location)
-                                (catch :default error (show-error! context error))))))
-    (.addEventListener (:component-boxes elements) "click"
-                       (fn []
-                         (let [enabled? (not= "true"
-                                              (.getAttribute (:component-boxes elements)
-                                                             "aria-pressed"))]
-                           (when storage
-                             (try (.setItem storage component-boxes-setting (str enabled?))
-                                  (catch :default _)))
-                           (update-component-boxes-button! context enabled?)
-                           (try
-                             (let [status (call-bridge :set-component-highlights enabled?)]
-                               (update-component-boxes-button!
-                                 context (boolean (:component-highlights status))))
-                             (catch :default error (show-error! context error))))))
-    (.addEventListener (:pick elements) "click"
-                       (fn []
-                         (try
-                           (let [active? (= "true" (.. (:pick elements) -dataset -active))
-                                 status (call-bridge (if active? :stop-picker :start-picker))]
-                             (set! (.. (:pick elements) -dataset -active)
-                                   (str (boolean (:picker-active status))))
-                             (set! (.-textContent (:pick elements))
-                                   (if (:picker-active status) "× Cancel" "⌖ Pick"))
-                             (update-component-boxes-button!
-                               context (boolean (:component-highlights status)))
-                             (update-navigation! context (:navigation status))
-                             (on-picking-change (boolean (:picker-active status))))
-                           (catch :default error (show-error! context error)))))
-    (.addEventListener (:detach elements) "click" on-detach)
-    (.addEventListener (:close elements) "click" on-close)
+    (rdom/render [panel-view context] mount-node)
     context))

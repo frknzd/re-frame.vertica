@@ -6,29 +6,6 @@
 (def panel-host-id "__re-frame-vertica-panel")
 (def toggle-shortcut "Ctrl+Shift+V")
 
-(def ^:private panel-markup
-  (str "<div class=\"panel-shell\">"
-       "<header>"
-       "<strong>re-frame.vertica</strong>"
-       "<span id=\"status\">Ready</span>"
-       "<div id=\"tree-nav\" role=\"group\" aria-label=\"Navigate selected DOM element\">"
-       "<button type=\"button\" data-direction=\"parent\" title=\"Select parent element\" aria-label=\"Select parent element\">↑</button>"
-       "<button type=\"button\" data-direction=\"child\" title=\"Select first child element\" aria-label=\"Select first child element\">↓</button>"
-       "<button type=\"button\" data-direction=\"previous\" title=\"Select previous sibling\" aria-label=\"Select previous sibling\">←</button>"
-       "<button type=\"button\" data-direction=\"next\" title=\"Select next sibling\" aria-label=\"Select next sibling\">→</button>"
-       "</div>"
-       "<button id=\"open-source\" type=\"button\" hidden>↗ Source</button>"
-       "<button id=\"refresh\" type=\"button\" title=\"Refresh provenance and source-map argument names\">↻ Refresh</button>"
-       "<button id=\"component-boxes\" type=\"button\" aria-pressed=\"true\" title=\"Hide Reagent component boxes\">◇ Boxes</button>"
-       "<button id=\"pick\" type=\"button\" title=\"Pick an element in the page\">⌖ Pick</button>"
-       "<button id=\"detach\" type=\"button\" title=\"Detach the panel into a floating window\">↗ Detach</button>"
-       "<button id=\"close\" type=\"button\" title=\"Close panel (Ctrl+Shift+V)\" aria-label=\"Close panel\">×</button>"
-       "</header>"
-       "<main><section id=\"canvas-wrap\">"
-       "<div id=\"graph\" role=\"region\" aria-label=\"re-frame data flow from app-db paths to the selected element\"></div>"
-       "<div id=\"empty\">Use Pick to select a Reagent element.</div>"
-       "</section></main></div>"))
-
 (defn- panel-host-style [floating?]
   (->> ["all:initial"
         "position:fixed"
@@ -47,32 +24,31 @@
 (defn- create-instance!
   [{:keys [document css floating? storage inspected-document inspected-window
            on-close on-detach on-picking-change]}]
-  (let [host (.createElement document "div")]
+  (let [host (doto (.createElement document "div")
+               (.setAttribute "data-re-frame-vertica-ui" "true")
+               (.setAttribute "role" "complementary")
+               (.setAttribute "aria-label" "re-frame.vertica inspector"))]
     (set! (.-id host) panel-host-id)
-    (.setAttribute host "data-re-frame-vertica-ui" "true")
-    (.setAttribute host "role" "complementary")
-    (.setAttribute host "aria-label" "re-frame.vertica inspector")
     (set! (.. host -style -cssText) (panel-host-style floating?))
     (let [shadow (.attachShadow host #js {:mode "open"})
           style (.createElement document "style")
-          container (.createElement document "div")]
+          mount-node (.createElement document "div")]
       (set! (.-textContent style) css)
-      (set! (.-innerHTML container) panel-markup)
-      (let [root (.-firstElementChild container)]
-        (.append shadow style root)
-        (.append (.-documentElement document) host)
-        (let [context (panel/mount!
-                        {:root root
-                         :storage storage
-                         :inspected-document inspected-document
-                         :inspected-window inspected-window
-                         :on-close on-close
-                         :on-detach on-detach
-                         :on-picking-change on-picking-change
-                         :open-source (fn [url _]
-                                        (.open inspected-window url "_blank" "noopener"))})]
-          (panel/set-floating! context floating?)
-          {:host host :context context})))))
+      (set! (.. mount-node -style -height) "100%")
+      (.append shadow style mount-node)
+      (.append (.-documentElement document) host)
+      (let [context (panel/mount!
+                      {:mount-node mount-node
+                       :storage storage
+                       :inspected-document inspected-document
+                       :inspected-window inspected-window
+                       :on-close on-close
+                       :on-detach on-detach
+                       :on-picking-change on-picking-change
+                       :open-source (fn [url _]
+                                      (.open inspected-window url "_blank" "noopener"))})]
+        (panel/set-floating! context floating?)
+        {:host host :context context}))))
 
 (defn toggle-shortcut? [event]
   (boolean

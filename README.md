@@ -108,7 +108,7 @@ npm ci
 npm run verify
 ```
 
-`npm run verify` runs the JVM shared-model tests, the ClojureScript tracking and panel tests, the production preload build, and both React fixture builds. The shipped inspector runtime, including its panel host, DOM renderer, layout logic, tokenizer, and source-map parser, is implemented in ClojureScript. Build output is written under `dist/preload` and `dist/fixtures`.
+`npm run verify` runs the JVM shared-model tests, the ClojureScript tracking and panel tests, the production preload build, and both React fixture builds. The shipped inspector runtime, including its Reagent/Hiccup panel, panel host, layout logic, tokenizer, and source-map parser, is implemented in ClojureScript. Build output is written under `dist/preload` and `dist/fixtures`.
 
 For a manual fixture test, serve either `dist/fixtures/react17` or `dist/fixtures/react18` over HTTP, focus the page, and press `Ctrl+Shift+V`.
 
