@@ -1,0 +1,57 @@
+{:min-bb-version "1.12.209"
+ :tasks
+ {:requires ([babashka.fs :as fs]
+             [cheshire.core :as json]
+             [clojure.string :as str])
+
+  :init
+  (do)
+
+  clean
+  {:doc "Remove generated build output"
+   :task (when (fs/exists? "dist")
+           (fs/delete-tree "dist"))}
+
+  test:jvm
+  {:doc "Run the JVM test suite"
+   :task (shell "lein test")}
+
+  test:cljs
+  {:doc "Compile and run the ClojureScript test suite"
+   :task (shell "npx shadow-cljs compile test")}
+
+  test
+  {:doc "Run the default test suite"
+   :task (run 'test:cljs)}
+
+  build:preload
+  {:doc "Build the production preload"
+   :task (shell "npx shadow-cljs release preload")}
+
+  build:fixtures
+  {:doc "Build the React 17 and React 18 fixtures"
+   :task
+   (do
+     (shell "npx shadow-cljs release fixture-react17 fixture-react18")
+     (doseq [version ["react17" "react18"]]
+       (let [target-dir (fs/path "dist" "fixtures" version)]
+         (fs/create-dirs target-dir)
+         (fs/copy (fs/path "fixtures" version "index.html")
+                  (fs/path target-dir "index.html")
+                  {:replace-existing true}))))}
+
+  build
+  {:doc "Clean and build the preload and fixtures"
+   :task
+   (do
+     (run 'clean)
+     (run 'build:preload)
+     (run 'build:fixtures))}
+
+  verify
+  {:doc "Run all tests and production builds"
+   :task
+   (do
+     (run 'test:jvm)
+     (run 'test:cljs)
+     (run 'build))}}}
