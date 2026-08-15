@@ -72,13 +72,16 @@
 
 (defn- all-children-involved? [value segments]
   (boolean
-    (or (some #{shared/wildcard} segments)
-        (= (set (cond
-                  (map? value) (keys value)
-                  (vector? value) (range (count value))
-                  (set? value) value
-                  :else []))
-           (set segments)))))
+    (if (some #{shared/wildcard} segments)
+      true
+      (let [segments (set segments)]
+        (and (= (count value) (count segments))
+             (every? #(contains? segments %)
+                     (cond
+                       (map? value) (keys value)
+                       (vector? value) (range (count value))
+                       (set? value) value
+                       :else [])))))))
 
 (defn- collection-node [base kind open close value children segments]
   (assoc base
@@ -89,11 +92,10 @@
          :all-children? (all-children-involved? value segments)
          :children children))
 
-(defn- paged-items [items path]
-  (let [items (vec items)
-        limit (max page-size (expansion-limit path))
-        visible (subvec items 0 (min limit (count items)))]
-    {:visible visible :omitted (- (count items) (count visible))}))
+(defn- paged-items [items total path]
+  (let [limit (max page-size (expansion-limit path))
+        visible (vec (take limit items))]
+    {:visible visible :omitted (- total (count visible))}))
 
 (defn- child-node [child child-path paths touched?]
   (cond
@@ -109,45 +111,45 @@
   (cond-> entries
     (pos? omitted) (conj {:key nil :node (ellipsis-node path omitted (count entries))})))
 
-(defn- map-children [value path paths]
-  (let [segments (next-segments (relevant-paths paths path) path)
+(defn- map-children [value path relevant]
+  (let [segments (next-segments relevant path)
         wildcard? (boolean (some #{shared/wildcard} segments))
         all? (all-children-involved? value segments)
         paged? (or all? (and (empty? segments) (expanded? path)))
         requested (if paged? (keys value) (remove #{shared/wildcard} segments))
         {:keys [visible omitted]} (if paged?
-                                    (paged-items requested path)
+                                    (paged-items requested (count value) path)
                                     {:visible (vec requested) :omitted 0})
         touched (set (remove #{shared/wildcard} segments))
-        entries (mapv #(child-entry % (get value %) path paths
+        entries (mapv #(child-entry % (get value %) path relevant
                                     (or wildcard? (contains? touched %)))
                       visible)]
     (append-ellipsis entries path omitted)))
 
-(defn- vector-children [value path paths]
-  (let [segments (next-segments (relevant-paths paths path) path)
+(defn- vector-children [value path relevant]
+  (let [segments (next-segments relevant path)
         wildcard? (boolean (some #{shared/wildcard} segments))
         all? (all-children-involved? value segments)
         paged? (or all? (and (empty? segments) (expanded? path)))
         requested (if paged? (range (count value)) (remove #{shared/wildcard} segments))
         {:keys [visible omitted]} (if paged?
-                                    (paged-items requested path)
+                                    (paged-items requested (count value) path)
                                     {:visible (vec requested) :omitted 0})
         touched (set (remove #{shared/wildcard} segments))
         entries (mapv #(child-entry % (when (and (integer? %) (<= 0 %) (< % (count value)))
                                          (nth value %))
-                                      path paths (or wildcard? (contains? touched %)))
+                                      path relevant (or wildcard? (contains? touched %)))
                       visible)]
     (append-ellipsis entries path omitted)))
 
-(defn- set-children [value path paths]
-  (let [segments (next-segments (relevant-paths paths path) path)
+(defn- set-children [value path relevant]
+  (let [segments (next-segments relevant path)
         wildcard? (boolean (some #{shared/wildcard} segments))
         all? (all-children-involved? value segments)
         paged? (or all? (and (empty? segments) (expanded? path)))
         requested (if paged? value (remove #{shared/wildcard} segments))
         {:keys [visible omitted]} (if paged?
-                                    (paged-items requested path)
+                                    (paged-items requested (count value) path)
                                     {:visible (vec requested) :omitted 0})
         touched (set (remove #{shared/wildcard} segments))
         entries
@@ -156,7 +158,7 @@
                       child (when present? item)
                       child-path (conj path item)]
                   {:key (when-not present? (pr-str item))
-                   :node (child-node child child-path paths
+                   :node (child-node child child-path relevant
                                      (or wildcard? (contains? touched item)))}))
               visible)]
     (append-ellipsis entries path omitted)))
@@ -171,11 +173,11 @@
       (and exact? (coll? value) (not descendant?) (not (expanded? path)))
       (exact-collection-node value path)
       (map? value) (collection-node base :map "{" "}" value
-                                    (map-children value path paths) segments)
+                                    (map-children value path relevant) segments)
       (vector? value) (collection-node base :vector "[" "]" value
-                                       (vector-children value path paths) segments)
+                                       (vector-children value path relevant) segments)
       (set? value) (collection-node base :set "#{" "}" value
-                                    (set-children value path paths) segments)
+                                    (set-children value path relevant) segments)
       :else (scalar-node value path (boolean (seq relevant)) exact?))))
 
 (defn app-db-tree

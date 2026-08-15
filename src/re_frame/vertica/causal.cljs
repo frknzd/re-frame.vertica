@@ -10,11 +10,11 @@
 
 (defn- children [value]
   (cond
-    (map? value) (mapv (fn [[key child]] [key child]) value)
-    (vector? value) (mapv vector (range) value)
-    (array? value) (mapv vector (range) (array-seq value))
-    (set? value) (mapv (fn [item] [item item]) value)
-    (sequential? value) (mapv vector (range) value)
+    (map? value) (map (fn [[key child]] [key child]) value)
+    (vector? value) (map-indexed vector value)
+    (array? value) (map-indexed vector (array-seq value))
+    (set? value) (map (fn [item] [item item]) value)
+    (sequential? value) (map-indexed vector value)
     :else []))
 
 (defn- index-aligned! [replacements baseline counterfactual]
@@ -244,7 +244,7 @@
           (gobj/set reaction "state" state))))))
 
 (defn- distinct-values [baseline values]
-  (->> values (remove #(= baseline %)) distinct vec))
+  (distinct (remove #(= baseline %) values)))
 
 (defn- scalar-variants [value]
   (distinct-values
@@ -295,6 +295,12 @@
     {:ok? true :value (if (contains? parent key) (disj parent key) (conj parent key))}
     :else {:ok? false :reason "The candidate path crosses a value that cannot be safely replaced."}))
 
+(defn- rebuild-path [value frames]
+  (reduce (fn [child [parent key]]
+            (:value (replace-child parent key child)))
+          value
+          (reverse frames)))
+
 (defn- perturbations [app-db path]
   (if (empty? path)
     {:values (value-variants app-db)}
@@ -306,39 +312,26 @@
           (if (set? cursor)
             (let [{:keys [ok? value reason]} (replace-child cursor key nil)]
               (if ok?
-                (loop [value value frames (reverse frames)]
-                  (if-let [[parent parent-key] (first frames)]
-                    (let [rebuilt (replace-child parent parent-key value)]
-                      (if (:ok? rebuilt)
-                        (recur (:value rebuilt) (rest frames))
-                        {:values [] :reason (:reason rebuilt)}))
-                    {:values [value]}))
+                {:values [(rebuild-path value frames)]}
                 {:values [] :reason reason}))
             (let [present? (cond
                              (map? cursor) (contains? cursor key)
                              (vector? cursor) (and (integer? key) (<= 0 key) (< key (count cursor)))
                              :else false)
                   current (when present? (get cursor key))
-                  variants (if present? (value-variants current) (scalar-variants nil))]
-              (if (empty? variants)
+                  variants (seq (if present? (value-variants current) (scalar-variants nil)))]
+              (if-not variants
                 {:values [] :reason "No safe counterfactual value exists for this path."}
-                (loop [variants variants result []]
-                  (if-let [variant (first variants)]
-                    (let [leaf (replace-child cursor key variant)]
-                      (if-not (:ok? leaf)
-                        {:values [] :reason (:reason leaf)}
-                        (let [rebuilt
-                              (loop [value (:value leaf) frames (reverse frames)]
-                                (if-let [[parent parent-key] (first frames)]
-                                  (let [next (replace-child parent parent-key value)]
-                                    (if (:ok? next)
-                                      (recur (:value next) (rest frames))
-                                      next))
-                                  {:ok? true :value value}))]
-                          (if (:ok? rebuilt)
-                            (recur (rest variants) (conj result (:value rebuilt)))
-                            {:values [] :reason (:reason rebuilt)}))))
-                    {:values result}))))))
+                (let [first-leaf (replace-child cursor key (first variants))]
+                  (if-not (:ok? first-leaf)
+                    {:values [] :reason (:reason first-leaf)}
+                    {:values
+                     (cons (rebuild-path (:value first-leaf) frames)
+                           (map (fn [variant]
+                                  (-> (replace-child cursor key variant)
+                                      :value
+                                      (rebuild-path frames)))
+                                (next variants)))}))))))
         (let [key (first remaining)
               child (cond
                       (map? cursor) (when (contains? cursor key) (get cursor key))
@@ -372,9 +365,10 @@
                 (let [{databases :values perturbation-error :reason} (perturbations app-db path)]
                   (if (empty? databases)
                     [path {:status :inconclusive :reason perturbation-error}]
-                    (loop [remaining databases successful 0 failure nil]
-                      (if-let [counterfactual-db (first remaining)]
-                        (let [result
+                    (loop [remaining (seq databases) successful 0 failure nil]
+                      (if remaining
+                        (let [counterfactual-db (first remaining)
+                              result
                               (try
                                 (let [replayed (replay counterfactual-db)]
                                   (cond
@@ -392,8 +386,8 @@
                                   {:error (or (ex-message error) (str error))}))]
                           (cond
                             (:changed? result) [path {:status :confirmed}]
-                            (:error result) (recur (rest remaining) successful (or failure (:error result)))
-                            :else (recur (rest remaining) (inc successful) failure)))
+                            (:error result) (recur (next remaining) successful (or failure (:error result)))
+                            :else (recur (next remaining) (inc successful) failure)))
                         [path (cond
                                 failure {:status :inconclusive :reason failure}
                                 (pos? successful) {:status :rejected}

@@ -53,7 +53,7 @@
    :next (boolean (relative-element element "next"))})
 
 (defn status []
-  (picker/heartbeat!)
+  (try (picker/heartbeat!) (catch :default _ nil))
   (let [element (or @state/hover-element @state/selected-element)]
     (encode {:protocol shared/protocol-version
              :revision @state/revision

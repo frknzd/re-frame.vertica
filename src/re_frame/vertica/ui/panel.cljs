@@ -689,6 +689,42 @@
          (when (number? next-revision)
            (swap! state assoc :revision next-revision)))))))
 
+(defn- after-next-paint! [inspected-window f]
+  (if (fn? (.-requestAnimationFrame inspected-window))
+    (.requestAnimationFrame inspected-window
+                            (fn [_] (.setTimeout inspected-window f 0)))
+    (.setTimeout inspected-window f 0)))
+
+(defn- request-snapshot!
+  ([context revision] (request-snapshot! context revision {}))
+  ([{:keys [state inspected-window] :as context} revision options]
+   (if (:snapshot-running? @state)
+     (js/Promise.resolve false)
+     (do
+       (swap! state assoc
+              :snapshot-running? true
+              :status-message "Analyzing selected element…"
+              :empty-message "Analyzing selected element…")
+       (js/Promise.
+         (fn [resolve _]
+           (after-next-paint!
+             inspected-window
+             (fn []
+               (if-not (:running? @state)
+                 (do
+                   (swap! state assoc :snapshot-running? false)
+                   (resolve false))
+                 (try
+                   (render-snapshot! context (call-bridge :snapshot) options)
+                   (swap! state assoc :failed-revision nil)
+                   (resolve true)
+                   (catch :default error
+                     (swap! state assoc :failed-revision revision)
+                     (show-error! context error)
+                     (resolve false))
+                   (finally
+                     (swap! state assoc :snapshot-running? false))))))))))))
+
 (defn- update-bridge-state! [{:keys [state] :as context} ready? message]
   (swap! state assoc :bridge-ready? ready?)
   (if-not ready?
@@ -749,8 +785,8 @@
            :status-message "Refreshing provenance and source maps…")
     (-> (load-source-resources! context)
         (.then (fn [_]
-                 (render-snapshot! context (call-bridge :snapshot)
-                                   {:preserve-scroll? true})))
+                 (swap! state assoc :failed-revision nil)
+                 (request-snapshot! context nil {:preserve-scroll? true})))
         (.catch #(show-error! context %))
         (.finally (fn []
                     (swap! state assoc :refresh-running? false))))))
@@ -775,9 +811,11 @@
             (update-component-boxes-button!
               context (boolean (:component-highlights status)))
             (update-navigation! context (:navigation status))
-            (when (not= (:revision status) (:revision @state))
-              (render-snapshot! context (call-bridge :snapshot)))))))
-    (catch :default _)
+            (when (and (not= (:revision status) (:revision @state))
+                       (not= (:revision status) (:failed-revision @state)))
+              (request-snapshot! context (:revision status)))))))
+    (catch :default error
+      (show-error! context error))
     (finally (schedule-poll! context))))
 
 (defn start! [{:keys [state inspected-window] :as context}]
@@ -788,7 +826,7 @@
     (schedule-poll! context)))
 
 (defn stop! [{:keys [state inspected-window on-picking-change]}]
-  (swap! state assoc :running? false :picker-active? false)
+  (swap! state assoc :running? false :picker-active? false :snapshot-running? false)
   (when-let [timer (:poll-timer @state)] (.clearTimeout inspected-window timer))
   (swap! state assoc :poll-timer nil)
   (on-picking-change false)
@@ -844,7 +882,8 @@
     :as context}]
   (let [{:keys [bridge-ready? component-highlights? empty-message floating? graph
                 has-selection? navigation navigation-running? picker-active?
-                refresh-running? sections selected-source-location status-message]}
+                refresh-running? sections selected-source-location snapshot-running?
+                status-message]}
         @state
         source-title (when selected-source-location
                        (str "Open " (:component-name selected-source-location)
@@ -876,6 +915,7 @@
                    :title title
                    :aria-label title
                    :disabled (or (not bridge-ready?)
+                                 snapshot-running?
                                  navigation-running?
                                  (not (get navigation direction)))
                    :on-click #(navigate-selected! context direction)}
@@ -891,9 +931,9 @@
               ":" (:line selected-source-location)))]
       [:button#refresh
        {:type :button
-        :class (when refresh-running? :loading)
-        :disabled (or (not bridge-ready?) refresh-running?)
-        :aria-busy refresh-running?
+        :class (when (or refresh-running? snapshot-running?) :loading)
+        :disabled (or (not bridge-ready?) refresh-running? snapshot-running?)
+        :aria-busy (or refresh-running? snapshot-running?)
         :title "Refresh provenance and source-map argument names"
         :on-click #(refresh-inspector! context)}
        "↻ Refresh"]
@@ -909,7 +949,7 @@
       [:button#choose
        {:type :button
         :data-active picker-active?
-        :disabled (not bridge-ready?)
+        :disabled (or (not bridge-ready?) snapshot-running?)
         :title "Choose an element in the page"
         :on-click #(toggle-picker! context)}
        (if picker-active? "× Cancel" "⌖ Choose")]
@@ -975,6 +1015,8 @@
                        :connection-running? false
                        :navigation-running? false
                        :refresh-running? false
+                       :snapshot-running? false
+                       :failed-revision nil
                        :picker-active? false
                        :floating? false
                        :has-selection? false

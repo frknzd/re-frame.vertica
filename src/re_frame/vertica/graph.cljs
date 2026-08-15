@@ -54,9 +54,10 @@
 
 (defn- resolve-signal [signal reads visiting memo traces complete? app-db]
   (cond
-    (identical? signal db/app-db) (tracker/tracked reads [] app-db)
+    (identical? signal db/app-db) (if reads (tracker/tracked reads [] app-db) app-db)
     (reaction-query signal) (replay-subscription-value signal (reaction-query signal)
-                                                       visiting memo traces app-db)
+                                                       visiting memo traces app-db
+                                                       (some? reads))
     (vector? signal) (mapv #(resolve-signal % reads visiting memo traces complete? app-db) signal)
     (map? signal) (reduce-kv (fn [result key value]
                                (assoc result key (resolve-signal value reads visiting memo traces complete? app-db)))
@@ -66,13 +67,13 @@
     (satisfies? IDeref signal) (fallback-value signal complete?)
     :else signal))
 
-(defn- replay-subscription-value [reaction query-v visiting memo traces app-db]
+(defn- replay-subscription-value [reaction query-v visiting memo traces app-db tracking?]
   (if (contains? @memo query-v)
     (get @memo query-v)
     (if (contains? visiting query-v)
       (let [complete? (or (some-> @traces (get query-v) :complete?) (atom true))]
         (fallback-value reaction complete?))
-      (let [reads (tracker/read-log)
+      (let [reads (when tracking? (tracker/read-log))
             complete? (atom true)]
         (swap! traces assoc query-v {:reads reads :complete? complete? :reaction reaction})
         (if-let [registration (get @state/registrations (query-id query-v))]
@@ -90,22 +91,24 @@
                 (catch :default _ (fallback-value reaction complete?)))))
           (fallback-value reaction complete?))))))
 
-(defn- trace-subscription [reaction query-v app-db]
-  (let [traces (atom {})
-        memo (atom {})
-        value (replay-subscription-value reaction query-v #{} memo traces app-db)
-        analyses (into {}
-                       (map (fn [[query {:keys [reads complete?]}]]
-                              [query {:paths (tracker/recorded-paths reads)
-                                      :complete? @complete?}]))
-                       @traces)]
-    {:value value
-     :values @memo
-     :reactions (into {} (map (fn [[query analysis]] [query (:reaction analysis)])) @traces)
-     :traces analyses
-     :complete? (every? :complete? (vals analyses))
-     :reason (when-not (every? :complete? (vals analyses))
-               "Subscription replay was incomplete.")}))
+(defn- trace-subscription
+  ([reaction query-v app-db] (trace-subscription reaction query-v app-db true))
+  ([reaction query-v app-db tracking?]
+   (let [traces (atom {})
+         memo (atom {})
+         value (replay-subscription-value reaction query-v #{} memo traces app-db tracking?)
+         analyses (into {}
+                        (map (fn [[query {:keys [reads complete?]}]]
+                               [query {:paths (if reads (tracker/recorded-paths reads) [])
+                                       :complete? @complete?}]))
+                        @traces)
+         complete? (every? :complete? (vals analyses))]
+     {:value value
+      :values @memo
+      :reactions (into {} (map (fn [[query analysis]] [query (:reaction analysis)])) @traces)
+      :traces analyses
+      :complete? complete?
+      :reason (when-not complete? "Subscription replay was incomplete.")})))
 
 (defn- add-traces [graph traces app-db evidence classifications]
   (reduce-kv
@@ -353,7 +356,7 @@
                   (causal/classify-paths
                     {:app-db @db/app-db
                      :paths candidate-paths
-                     :replay #(trace-subscription reaction query-v %)
+                     :replay #(trace-subscription reaction query-v % false)
                      :prop-sources props
                      :oracle render-oracle
                      :root-reaction reaction})
