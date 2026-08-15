@@ -21,7 +21,7 @@
     (is (some #{:in-page-panel} (:features capabilities)))
     (is (some #{:detachable-panel} (:features capabilities)))
     (is (= shared/protocol-version
-           (:protocol (bridge/decode-response (bridge/capabilities)))))))
+           (:protocol (bridge/decode (bridge/capabilities)))))))
 
 (deftest snapshot-preserves-kinds-used-by-panel-sections
   (let [snapshot (decode (bridge/snapshot))]

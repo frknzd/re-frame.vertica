@@ -14,13 +14,9 @@
 (defonce writer (transit/writer :json))
 (defonce reader (transit/reader :json))
 
-(defn- encode [value]
-  ;; Preserve domain keywords across the internal transport. Converting the
-  ;; snapshot to JavaScript first turns node kinds such as :subscription into
-  ;; strings, so the panel cannot place any nodes in its keyword-keyed sections.
-  (transit/write writer value))
+(defn- encode [value] (transit/write writer value))
 
-(defn decode-response [encoded]
+(defn decode [encoded]
   (when (some? encoded)
     (walk/keywordize-keys (transit/read reader encoded))))
 

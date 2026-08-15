@@ -1,6 +1,9 @@
-:host { --font-mono: "JetBrains Mono", "Berkeley Mono", "Cascadia Code", "SFMono-Regular", "Roboto Mono", "IBM Plex Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; color-scheme: dark; font-family: var(--font-mono); font-size: 13px; font-feature-settings: "calt" 1, "liga" 1; font-variant-ligatures: contextual common-ligatures; line-height: 1.55; text-rendering: optimizeLegibility; }
+:host { --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, "JetBrains Mono", "Cascadia Code", "Roboto Mono", Monaco, Consolas, monospace; }
 * { box-sizing: border-box; }
-.panel-shell { height: 100%; margin: 0; overflow: hidden; background: #0b0e13; color: #e9edf3; font-family: inherit; }
+.panel-shell { position: relative; height: 100%; margin: 0; overflow: hidden; background: #0b0e13; color: #e9edf3; color-scheme: dark; font-family: var(--font-mono); font-size: 13px; font-feature-settings: "calt" 1, "liga" 1; font-variant-ligatures: contextual common-ligatures; line-height: 1.55; text-rendering: optimizeLegibility; }
+.panel-resize-handle { position: absolute; z-index: 100; top: 0; bottom: 0; left: 0; width: 9px; border: 0; outline: none; cursor: ew-resize; touch-action: none; }
+.panel-resize-handle::before { content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: #303846; transition: width 100ms ease, background 100ms ease, box-shadow 100ms ease; }
+.panel-resize-handle:hover::before, .panel-resize-handle:focus-visible::before { width: 3px; background: #55b8ff; box-shadow: 0 0 10px rgba(85, 184, 255, .7); }
 .panel-shell > header { height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 11px; border-bottom: 1px solid #262c36; background: #14181f; }
 .panel-shell > header strong { color: #8cddff; letter-spacing: -.01em; }
 #status { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9ca8b9; }

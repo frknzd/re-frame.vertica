@@ -13,8 +13,19 @@
 (def ^:private component-boxes-setting "re-frame.vertica.component-boxes")
 (def ^:private select-element-message "Use Choose to select a Reagent element.")
 
+(defn- class-list [& classes]
+  (->> classes
+       (mapcat #(if (sequential? %) % [%]))
+       (remove nil?)
+       vec))
+
+(defn- toggle-set-member [members member]
+  (if (contains? members member)
+    (disj members member)
+    (conj members member)))
+
 (defn- call-bridge [method & arguments]
-  (bridge/decode-response
+  (bridge/decode
     (case method
       :capabilities (bridge/capabilities)
       :status (bridge/status)
@@ -33,9 +44,10 @@
       (if (= :plain type)
         text
         ^{:key index}
-        [:span {:class (str "edn-token edn-" (name type)
-                            (when (= :bracket type)
-                              (str " bracket-" (mod depth 6))))}
+        [:span {:class [:edn-token
+                        (keyword (str "edn-" (name type)))
+                        (when (= :bracket type)
+                          (keyword (str "bracket-" (mod depth 6))))]}
          text]))
     (tokenizer/edn-tokens source)))
 
@@ -45,7 +57,7 @@
                                   #(reset! tokens (token-hiccup source))
                                   0)]
     (into [:code (merge attrs
-                        {:class (str class-name (when-not @tokens " tokenizing"))})]
+                        {:class (class-list class-name (when-not @tokens :tokenizing))})]
           (or @tokens [source]))
     (finally (.clearTimeout inspected-window timer))))
 
@@ -59,7 +71,7 @@
                            :class-name class-name
                            :source source
                            :attrs attrs}]
-       (into [:code (merge attrs {:class class-name})]
+       (into [:code (merge attrs {:class (class-list class-name)})]
              (token-hiccup source))))))
 
 (defn- component-boxes-preference [{:keys [storage]}]
@@ -221,20 +233,20 @@
    (let [leaves (layout/leaf-most-components components (get-in @state [:graph :edges]))]
      (when (seq leaves)
        (into
-         [:span {:class (str "component-badges"
-                             (when compact? " compact-component-badges"))
+         [:span {:class [:component-badges
+                         (when compact? :compact-component-badges)]
                  :aria-label (str "Leaf Reagent component: "
                                   (str/join "; " (map :label leaves)))}]
          (if compact?
            (let [labels (map #(or (:label %) "Anonymous component") leaves)]
-             [[:span {:class "component-badge compact-component-badge"
+             [[:span {:class [:component-badge :compact-component-badge]
                       :title (str "Reagent component"
                                   (when (not= 1 (count leaves)) "s")
                                   ": " (str/join "; " labels))}
                (if (= 1 (count leaves)) "C" (str "C×" (count leaves)))]])
            (map (fn [component]
                   ^{:key (:id component)}
-                  [:span {:class "component-badge"
+                  [:span {:class :component-badge
                           :title (str "Reagent component: " (:label component))}
                    (or (:label component) "Anonymous component")])
                 leaves)))))))
@@ -273,9 +285,10 @@
         value-title (if showing?
                       "Double-click to show the preview"
                       "Double-click to show the complete value")]
-    [:article {:class (str "node-row " (name (:kind node))
-                           (when (false? (:complete? node)) " partial")
-                           (when collapsed? " collapsed"))
+    [:article {:class [:node-row
+                       (:kind node)
+                       (when (false? (:complete? node)) :partial)
+                       (when collapsed? :collapsed)]
                :title (when (false? (:complete? node))
                         (or (:reason node)
                             "App-db provenance is incomplete for this subscription."))
@@ -286,16 +299,16 @@
         [:div.identity-cell
          [:div.tree-indent
           [:span.kind-dot]
-          (edn-code context "node-identity" (:label node))]]
+          (edn-code context :node-identity (:label node))]]
         (when (contains? #{:subscription :prop} (:kind node))
           (when-let [badges (component-badges
                               context (get (:component-associations @state) (:id node)))]
-            [(update badges 1 update :class str " subscription-component-badges")])))
+            [(update-in badges [1 :class] conj :subscription-component-badges)])))
       (when (:value section)
-        [:div {:class (str "value-cell"
-                           (when (:preview-truncated? node) " expandable")
-                           (when showing? " expanded")
-                           (when loading? " loading"))
+        [:div {:class [:value-cell
+                       (when (:preview-truncated? node) :expandable)
+                       (when showing? :expanded)
+                       (when loading? :loading)]
                :title (when (:preview-truncated? node) value-title)
                :tab-index (when (:preview-truncated? node) 0)
                :aria-busy (when loading? true)
@@ -308,11 +321,11 @@
                                 (when (= "Enter" (.-key event))
                                   (.preventDefault event)
                                   (toggle-full-value! context node showing?))))}
-         (edn-code context "node-value"
+         (edn-code context :node-value
                    (if showing? (:value expanded) (or (:preview node) "—")))
          (when (:preview-truncated? node)
-           [:button {:type "button"
-                     :class "value-more"
+           [:button {:type :button
+                     :class :value-more
                      :title (if showing?
                               "Show the shortened preview"
                               "Show the complete value")
@@ -321,14 +334,14 @@
                                  (.stopPropagation event)
                                  (toggle-full-value! context node showing?))}
             (if showing? "Show less" "… Show all")])])]
-     [:button {:type "button"
-               :class "row-toggle"
+     [:button {:type :button
+               :class :row-toggle
                :title (if collapsed? "Expand row" "Collapse row")
                :aria-label (if collapsed? "Expand row" "Collapse row")
                :on-click (fn [event]
                            (.stopPropagation event)
                            (swap! state update :collapsed-nodes
-                                  (if collapsed? disj conj) (:id node)))}
+                                  toggle-set-member (:id node)))}
       (if collapsed? "+" "−")]]))
 
 (defn- db-node-state [node]
@@ -362,8 +375,8 @@
                       (update :collapsed-db-paths conj path)))))
 
 (defn- render-db-value [context text path class-name]
-  [:span {:class (str "db-tree-value " class-name)}
-   (edn-code context "db-tree-code" text {:data-path path})])
+  [:span {:class (class-list :db-tree-value class-name)}
+   (edn-code context :db-tree-code text {:data-path path})])
 
 (defn- replace-db-branch [node path replacement]
   (cond
@@ -406,17 +419,17 @@
         showing? (some? full-value)
         loading? (contains? (:loading-db-paths @state) path)]
     (into
-      [:div {:class (str "db-vector-entry " (name (db-node-state node)))
+      [:div {:class [:db-vector-entry (db-node-state node)]
              :title path-title}
-       (edn-code context "db-tree-code db-tree-key db-vector-key" key-label
+       (edn-code context [:db-tree-code :db-tree-key :db-vector-key] key-label
                  {:data-path path :title path-title})
        (render-db-value context
                         (if showing? full-value (or (:text node) "nil"))
                         path
-                        (str "leaf-value" (when showing? " expanded")))
+                        [:leaf-value (when showing? :expanded)])
        (when (:preview-truncated? node)
-         [:button {:type "button"
-                   :class (str "db-value-more" (when loading? " loading"))
+         [:button {:type :button
+                   :class [:db-value-more (when loading? :loading)]
                    :disabled loading?
                    :title (if showing?
                             (str "Collapse app-db value " path)
@@ -436,7 +449,7 @@
           (mapcat
             (fn [{:keys [layout entries]}]
               (if (= :compact layout)
-                [[:div {:class "db-vector-entries"
+                [[:div {:class :db-vector-entries
                         :style {"--db-depth" (str (inc depth))}
                         :key (str "compact-" (:path-label (:node (first entries))))}
                   (for [{:keys [node key]} entries]
@@ -464,31 +477,31 @@
          toggle-title (str (if collapsed? "Expand " "Collapse ") path)
          line
          (if (= :ellipsis (:kind node))
-           [:div {:class "db-tree-line" :style {"--db-depth" (str depth)}}
+           [:div {:class :db-tree-line :style {"--db-depth" (str depth)}}
             [:span.db-tree-toggle-spacer]
-            [:button {:type "button"
-                      :class (str "db-tree-more" (when loading? " loading"))
+            [:button {:type :button
+                      :class [:db-tree-more (when loading? :loading)]
                       :disabled loading?
                       :title (str "Load more entries from " path)
                       :on-click #(load-more-db-context!
                                    context path (:visible-count node))}
              (or (:text node) "… more")]]
            (into
-             [:div {:class "db-tree-line" :style {"--db-depth" (str depth)}}
+             [:div {:class :db-tree-line :style {"--db-depth" (str depth)}}
               (if collection?
-                [:button {:type "button"
-                          :class "db-tree-toggle"
+                [:button {:type :button
+                          :class :db-tree-toggle
                           :title toggle-title
                           :aria-label toggle-title
                           :on-click #(toggle-db-node! context path collapsed?)}
                  (if collapsed? "+" "−")]
                 [:span.db-tree-toggle-spacer])
               (when (some? key-label)
-                (edn-code context "db-tree-code db-tree-key" key-label
+                (edn-code context [:db-tree-code :db-tree-key] key-label
                           {:data-path path :title (str "app-db " path)}))
               (if (= :summary (:kind node))
-                [:button {:type "button"
-                          :class (str "db-tree-summary" (when loading? " loading"))
+                [:button {:type :button
+                          :class [:db-tree-summary (when loading? :loading)]
                           :disabled loading?
                           :title (str "Load entries from " path)
                           :aria-label (str "Load entries from " path)
@@ -499,10 +512,10 @@
                   (if collection? (:open node)
                       (if showing? full-value (or (:text node) "nil")))
                   path
-                  (if collection? "collection-value" "leaf-value")))
+                  (if collection? :collection-value :leaf-value)))
               (when (:preview-truncated? node)
-                [:button {:type "button"
-                          :class (str "db-value-more" (when loading? " loading"))
+                [:button {:type :button
+                          :class [:db-value-more (when loading? :loading)]
                           :disabled loading?
                           :title (if showing?
                                    (str "Collapse app-db value " path)
@@ -510,8 +523,8 @@
                           :on-click #(toggle-full-db-value! context path showing?)}
                  (if showing? "Show less" "… Show all")])
               (when (and collection? collapsed?)
-                [:button {:type "button"
-                          :class "db-tree-collapsed-mark"
+                [:button {:type :button
+                          :class :db-tree-collapsed-mark
                           :title (if default-collapsed?
                                    (str "Expand " path "; all " (:child-count node)
                                         " entries contribute")
@@ -523,18 +536,19 @@
              (when-let [badges (component-badges
                                  context (components-for-db-node context node))]
                [badges])))]
-     (cond-> [:div {:class (str "db-tree-node " (name (db-node-state node))
-                                (when collapsed? " collapsed"))}
+     (cond-> [:div {:class [:db-tree-node
+                            (db-node-state node)
+                            (when collapsed? :collapsed)]}
               line]
        (and collection? (not collapsed?))
        (conj (db-node-children context node depth)
-             [:div {:class "db-tree-line db-tree-close"
+             [:div {:class [:db-tree-line :db-tree-close]
                     :style {"--db-depth" (str depth)}}
               [:span.db-tree-toggle-spacer]
-              (render-db-value context (:close node) path "collection-value")])))))
+              (render-db-value context (:close node) path :collection-value)])))))
 
 (defn- app-db-section [context section app-db-tree]
-  [:section {:class (str "graph-section " (name (:kind section)) " db-tree-section")}
+  [:section {:class [:graph-section (:kind section) :db-tree-section]}
    [:header.section-header
     [:h2.section-title
      (:title section)
@@ -543,44 +557,48 @@
      [:div.db-tree [db-node-view context app-db-tree]])])
 
 (defn- section-view [{:keys [state] :as context} section graph]
-  (if (= :app-db-path (:kind section))
-    [app-db-section context section (:app-db-tree graph)]
-    [:section {:class (str "graph-section " (name (:kind section))
-                           (if (:value section) " has-values" " single-column"))}
-     [:header.section-header
-      [:h2.section-title
-       (:title section)
-       [:span.section-count (count (:nodes section))]]]
-     (when (seq (:nodes section))
-       [:div.column-headings
-        [:span.identity-heading (:identity section)]
-        (when (:value section)
-          [:span.value-heading (:value section)])])
-     (when (seq (:nodes section))
-       (if (:levels section)
-         (for [{:keys [level nodes]} (:levels section)
-               :let [collapsed? (contains? (:collapsed-subscription-levels @state) level)]]
-           ^{:key level}
-           [:div {:class (str "subscription-level" (when collapsed? " collapsed"))}
-            [:button {:type "button"
-                      :class "level-header"
-                      :title (str (if collapsed? "Expand" "Collapse")
-                                  " subscription level " level)
-                      :aria-expanded (not collapsed?)
-                      :on-click #(swap! state update :collapsed-subscription-levels
-                                        (if collapsed? disj conj) level)}
-             [:span.level-chevron (if collapsed? "▸" "▾")]
-             [:span.level-title (str "LEVEL " level)]
-             [:span.level-count (count nodes)]]
-            (when-not collapsed?
-              (into [:div.section-rows]
-                    (map (fn [node]
-                           ^{:key (:id node)} [node-view context node section])
-                         nodes)))])
-         (into [:div.section-rows]
-               (map (fn [node]
-                      ^{:key (:id node)} [node-view context node section])
-                    (:nodes section)))))]))
+  (let [collapsed-levels (:collapsed-subscription-levels @state)]
+    (if (= :app-db-path (:kind section))
+      [app-db-section context section (:app-db-tree graph)]
+      [:section {:class [:graph-section
+                         (:kind section)
+                         (if (:value section) :has-values :single-column)]}
+       [:header.section-header
+        [:h2.section-title
+         (:title section)
+         [:span.section-count (count (:nodes section))]]]
+       (when (seq (:nodes section))
+         [:div.column-headings
+          [:span.identity-heading (:identity section)]
+          (when (:value section)
+            [:span.value-heading (:value section)])])
+       (when (seq (:nodes section))
+         (if (:levels section)
+           (mapv
+             (fn [{:keys [level nodes]}]
+               (let [collapsed? (contains? collapsed-levels level)]
+                 ^{:key level}
+                 [:div {:class [:subscription-level (when collapsed? :collapsed)]}
+                  [:button {:type :button
+                            :class :level-header
+                            :title (str (if collapsed? "Expand" "Collapse")
+                                        " subscription level " level)
+                            :aria-expanded (not collapsed?)
+                            :on-click #(swap! state update :collapsed-subscription-levels
+                                              toggle-set-member level)}
+                   [:span.level-chevron (if collapsed? "▸" "▾")]
+                   [:span.level-title (str "LEVEL " level)]
+                   [:span.level-count (count nodes)]]
+                  (when-not collapsed?
+                    (into [:div.section-rows]
+                          (map (fn [node]
+                                 ^{:key (:id node)} [node-view context node section])
+                               nodes)))]))
+             (:levels section))
+           (into [:div.section-rows]
+                 (map (fn [node]
+                        ^{:key (:id node)} [node-view context node section])
+                      (:nodes section)))))])))
 
 (defn- sync-subscription-level-state! [state sections nodes]
   (let [selection-id (:id (first (filter #(= :element (:kind %)) nodes)))
@@ -820,7 +838,9 @@
    [:next "→" "Select next sibling"]])
 
 (defn- panel-view
-  [{:keys [state canvas on-close on-detach] :as context}]
+  [{:keys [state canvas on-close on-detach on-resize-start on-resize-key-down
+           on-resize-double-click]
+    :as context}]
   (let [{:keys [bridge-ready? component-highlights? empty-message floating? graph
                 has-selection? navigation navigation-running? picker-active?
                 refresh-running? sections selected-source-location status-message]}
@@ -833,15 +853,25 @@
         detach-title (if floating?
                        "Attach the panel to the application"
                        "Detach the panel into a floating window")]
-    [:div {:class (str "panel-shell" (when-not bridge-ready? " preload-missing"))}
+    [:div {:class [:panel-shell (when-not bridge-ready? :preload-missing)]}
+     (when-not floating?
+       [:div {:class :panel-resize-handle
+              :role :separator
+              :aria-label "Resize inspector panel"
+              :aria-orientation :vertical
+              :tab-index 0
+              :title "Drag to resize · Double-click to maximize"
+              :on-pointer-down on-resize-start
+              :on-key-down on-resize-key-down
+              :on-double-click on-resize-double-click}])
      [:header
       [:strong "re-frame.vertica"]
       [:span#status status-message]
-      [:div#tree-nav {:role "group" :aria-label "Navigate selected DOM element"}
+      [:div#tree-nav {:role :group :aria-label "Navigate selected DOM element"}
        (for [[direction label title] navigation-controls]
          ^{:key direction}
-         [:button {:type "button"
-                   :data-direction (name direction)
+         [:button {:type :button
+                   :data-direction direction
                    :title title
                    :aria-label title
                    :disabled (or (not bridge-ready?)
@@ -850,7 +880,7 @@
                    :on-click #(navigate-selected! context direction)}
           label])]
       [:button#open-source
-       {:type "button"
+       {:type :button
         :hidden (nil? selected-source-location)
         :title source-title
         :aria-label source-title
@@ -859,15 +889,15 @@
          (str "↗ " (source-basename (:url selected-source-location))
               ":" (:line selected-source-location)))]
       [:button#refresh
-       {:type "button"
-        :class (when refresh-running? "loading")
+       {:type :button
+        :class (when refresh-running? :loading)
         :disabled (or (not bridge-ready?) refresh-running?)
         :aria-busy refresh-running?
         :title "Refresh provenance and source-map argument names"
         :on-click #(refresh-inspector! context)}
        "↻ Refresh"]
       [:button#component-boxes
-       {:type "button"
+       {:type :button
         :aria-pressed component-highlights?
         :disabled (not bridge-ready?)
         :title (if component-highlights?
@@ -876,20 +906,20 @@
         :on-click #(toggle-component-boxes! context)}
        "◇ Boxes"]
       [:button#choose
-       {:type "button"
+       {:type :button
         :data-active picker-active?
         :disabled (not bridge-ready?)
         :title "Choose an element in the page"
         :on-click #(toggle-picker! context)}
        (if picker-active? "× Cancel" "⌖ Choose")]
       [:button#detach
-       {:type "button"
+       {:type :button
         :title detach-title
         :aria-label detach-title
         :on-click on-detach}
        (if floating? "↙ Attach" "↗ Detach")]
       [:button#close
-       {:type "button"
+       {:type :button
         :title "Close panel (Ctrl+Shift+V)"
         :aria-label "Close panel"
         :on-click on-close}
@@ -899,7 +929,7 @@
        {:ref #(reset! canvas %)}
        (into
          [:div#graph
-          {:role "region"
+          {:role :region
            :aria-label "re-frame data flow from app-db paths to the selected element"}]
          (map (fn [section]
                 ^{:key (:kind section)} [section-view context section graph])
@@ -908,10 +938,14 @@
 
 (defn mount!
   [{:keys [mount-node storage inspected-document inspected-window
-           on-close on-detach on-picking-change open-source]
+           on-close on-detach on-picking-change open-source on-resize-start
+           on-resize-key-down on-resize-double-click]
     :or {on-close (fn [])
          on-detach (fn [])
-         on-picking-change (fn [_])}}]
+         on-picking-change (fn [_])
+         on-resize-start (fn [_])
+         on-resize-key-down (fn [_])
+         on-resize-double-click (fn [_])}}]
   (let [state (r/atom {:graph nil
                        :sections []
                        :revision -1
@@ -959,6 +993,9 @@
                  :on-picking-change on-picking-change
                  :on-close on-close
                  :on-detach on-detach
+                 :on-resize-start on-resize-start
+                 :on-resize-key-down on-resize-key-down
+                 :on-resize-double-click on-resize-double-click
                  :open-source open-source
                  :canvas canvas
                  :state state
