@@ -1,5 +1,5 @@
 (ns re-frame.vertica.shared-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is]]
             [re-frame.vertica.shared :as shared]))
 
 (deftest leaf-path-selection

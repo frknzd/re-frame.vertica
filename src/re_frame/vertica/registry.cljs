@@ -1,6 +1,5 @@
 (ns re-frame.vertica.registry
-  (:require [re-frame.db :as db]
-            [re-frame.registrar :as registrar]
+  (:require [re-frame.registrar :as registrar]
             [re-frame.subs :as subs]
             [re-frame.vertica.state :as state]))
 
@@ -13,10 +12,6 @@
       (inputs-fn query-v dyn-v)
       (inputs-fn query-v nil))
     (catch :default _ ::unknown)))
-
-(defn layer-2?
-  [{:keys [inputs-fn latest-query latest-dyn]}]
-  (identical? db/app-db (invoke-inputs inputs-fn latest-query latest-dyn)))
 
 (defn input-signals [{:keys [inputs-fn]} query-v dyn-v]
   (invoke-inputs inputs-fn query-v dyn-v))

@@ -214,15 +214,8 @@
   (heartbeat!)
   (if element
     (place-overlay! (ensure-overlay!) element)
-    (do
-      (when-let [current @overlay]
-        (set! (.. current -style -display) "none"))))
-  true)
-
-(defn clear-highlight! []
-  (reset! highlighted-element nil)
-  (when-let [current @overlay]
-    (set! (.. current -style -display) "none"))
+    (when-let [current @overlay]
+      (set! (.. current -style -display) "none")))
   true)
 
 (declare stop!)

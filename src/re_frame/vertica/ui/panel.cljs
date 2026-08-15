@@ -557,9 +557,10 @@
      [:div.db-tree [db-node-view context app-db-tree]])])
 
 (defn- section-view [{:keys [state] :as context} section graph]
-  (let [collapsed-levels (:collapsed-subscription-levels @state)]
-    (if (= :app-db-path (:kind section))
-      [app-db-section context section (:app-db-tree graph)]
+  (if (= :app-db-path (:kind section))
+    [app-db-section context section (:app-db-tree graph)]
+    (let [collapsed-levels (when (:levels section)
+                             (:collapsed-subscription-levels @state))]
       [:section {:class [:graph-section
                          (:kind section)
                          (if (:value section) :has-values :single-column)]}

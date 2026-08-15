@@ -1,6 +1,5 @@
 (ns re-frame.vertica.graph
-  (:require [re-frame.core :as rf]
-            [re-frame.db :as db]
+  (:require [re-frame.db :as db]
             [re-frame.subs :as subs]
             [goog.object :as gobj]
             [re-frame.vertica.causal :as causal]
@@ -29,9 +28,6 @@
 
 (defn- subscription-id [query-v]
   (shared/stable-id :subscription query-v))
-
-(defn- value-token [kind identity]
-  (state/new-token!))
 
 (defonce ^:private preview-cache (js/WeakMap.))
 
@@ -128,7 +124,7 @@
       (let [id (shared/stable-id :app-db-path path)
             existing (get-in g [:nodes id])
             value (path-value app-db path)
-            token (when-not existing (value-token :app-db-path path))
+            token (when-not existing (state/new-token!))
             preview (when-not existing (value-preview value 1200))
             with-node
             (cond
@@ -163,7 +159,7 @@
       graph
       (let [registration (get @state/registrations (query-id query-v))
               value (try @reaction (catch :default error error))
-              token (value-token :subscription query-v)
+              token (state/new-token!)
               input-reactions (->> (watched reaction)
                                    (keep #(when-let [q (reaction-query %)] [% q])))
               raw-or-missing? (nil? registration)
@@ -300,7 +296,7 @@
                                        (update :props conj source)))))
                        inputs subscription-prop-sources))))
         element-id (react/object-id "element" element)
-        element-token (value-token :element element)
+        element-token (state/new-token!)
         initial {:nodes {element-id {:id element-id :kind :element
                                      :label (or (react/element-label element) "No element")
                                      :preview (shared/bounded-preview element)
@@ -312,7 +308,7 @@
         with-components
         (reduce
           (fn [graph {:keys [id name reaction adapter]}]
-            (let [component-token (value-token :component id)
+            (let [component-token (state/new-token!)
                   graph (add-node graph id
                                   {:id id :kind :component :label name
                                    :adapter adapter :token component-token
@@ -323,7 +319,7 @@
         with-props
         (reduce
           (fn [graph {:keys [id index value]}]
-            (let [token (value-token :prop [leaf-id index])
+            (let [token (state/new-token!)
                   preview (value-preview value 600)
                   graph (add-node graph id
                                   {:id id :kind :prop :label (str "arg " (inc index))

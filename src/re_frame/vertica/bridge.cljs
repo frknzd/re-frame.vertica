@@ -20,9 +20,6 @@
   (when (some? encoded)
     (walk/keywordize-keys (transit/read reader encoded))))
 
-(defn- graph-snapshot [element]
-  (graph/snapshot element))
-
 (defn capabilities []
   (encode {:protocol shared/protocol-version
            :name "re-frame.vertica"
@@ -67,17 +64,9 @@
              :selection (some-> element react/element-label)
              :navigation (navigation-state @state/selected-element)})))
 
-(defn select-element [element]
-  (reset! state/selected-element element)
-  (reset! state/hover-element nil)
-  (state/begin-selection!)
-  (picker/highlight! element)
-  (state/bump!)
-  (encode (assoc (graph-snapshot element) :navigation (navigation-state element))))
-
 (defn snapshot []
   (let [element (or @state/hover-element @state/selected-element)]
-    (encode (assoc (graph-snapshot element)
+    (encode (assoc (graph/snapshot element)
                    :navigation (navigation-state @state/selected-element)))))
 
 (defn navigate-element [direction]
@@ -88,12 +77,10 @@
       (state/begin-selection!)
       (picker/highlight! element)
       (state/bump!)
-      (encode (assoc (graph-snapshot element) :navigation (navigation-state element))))
+      (encode (assoc (graph/snapshot element) :navigation (navigation-state element))))
     (encode {:protocol shared/protocol-version :ok false
              :error "There is no element in that direction."
              :navigation (navigation-state @state/selected-element)})))
-
-(defn selected-element [] @state/selected-element)
 
 (defn start-picker [] (picker/start!) (status))
 (defn stop-picker [] (picker/stop!) (status))

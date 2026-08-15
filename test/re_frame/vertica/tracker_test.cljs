@@ -1,6 +1,5 @@
 (ns re-frame.vertica.tracker-test
   (:require [cljs.test :refer-macros [deftest is testing]]
-            [re-frame.vertica.shared :as shared]
             [re-frame.vertica.tracker :as tracker]))
 
 (defrecord Person [name roles])
