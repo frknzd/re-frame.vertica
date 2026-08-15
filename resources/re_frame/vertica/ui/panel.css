@@ -29,6 +29,14 @@ main { height: calc(100vh - 42px); }
 .panel-shell.preload-missing #empty { color: #e7bd70; }
 #empty[hidden] { display: none; }
 
+.panel-render-error { display: grid; height: 100%; padding: 32px; place-items: center; overflow: auto; background: #0d1118; }
+.panel-render-error-card { display: grid; grid-template-columns: auto minmax(0, 680px); gap: 16px; width: min(100%, 760px); padding: 22px; border: 1px solid #6f3f45; border-radius: 10px; background: #21171a; box-shadow: 0 18px 52px rgba(0, 0, 0, .32); }
+.panel-render-error-mark { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid #a75d67; border-radius: 50%; background: #3b2025; color: #ffb4bd; font-weight: 850; }
+.panel-render-error h2 { margin: 1px 0 7px; color: #ffd8dc; font-size: 15px; }
+.panel-render-error p { margin: 0 0 13px; color: #c2a9ad; }
+.panel-render-error pre { max-height: 210px; margin: 0; padding: 11px 12px; overflow: auto; border: 1px solid #57353a; border-radius: 6px; background: #130d0f; color: #f3c2c8; font: 12px/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.panel-render-error-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+
 .graph-section { overflow: hidden; border: 1px solid var(--section-border); border-radius: 10px; background: var(--section-bg); }
 .graph-section.app-db-path { overflow: visible; --accent: #43dfa2; --section-border: #205d47; --section-bg: #10231c; --row-bg: #132c23; --row-hover: #18382c; }
 .graph-section.subscription { --accent: #55b8ff; --section-border: #214b76; --section-bg: #101d2e; --row-bg: #13243a; --row-hover: #172d49; }

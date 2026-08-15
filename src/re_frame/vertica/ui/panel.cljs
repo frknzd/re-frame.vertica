@@ -575,27 +575,29 @@
             [:span.value-heading (:value section)])])
        (when (seq (:nodes section))
          (if (:levels section)
-           (mapv
-             (fn [{:keys [level nodes]}]
-               (let [collapsed? (contains? collapsed-levels level)]
-                 ^{:key level}
-                 [:div {:class [:subscription-level (when collapsed? :collapsed)]}
-                  [:button {:type :button
-                            :class :level-header
-                            :title (str (if collapsed? "Expand" "Collapse")
-                                        " subscription level " level)
-                            :aria-expanded (not collapsed?)
-                            :on-click #(swap! state update :collapsed-subscription-levels
-                                              toggle-set-member level)}
-                   [:span.level-chevron (if collapsed? "▸" "▾")]
-                   [:span.level-title (str "LEVEL " level)]
-                   [:span.level-count (count nodes)]]
-                  (when-not collapsed?
-                    (into [:div.section-rows]
-                          (map (fn [node]
-                                 ^{:key (:id node)} [node-view context node section])
-                               nodes)))]))
-             (:levels section))
+           (into
+             [:<>]
+             (map
+               (fn [{:keys [level nodes]}]
+                 (let [collapsed? (contains? collapsed-levels level)]
+                   ^{:key level}
+                   [:div {:class [:subscription-level (when collapsed? :collapsed)]}
+                    [:button {:type :button
+                              :class :level-header
+                              :title (str (if collapsed? "Expand" "Collapse")
+                                          " subscription level " level)
+                              :aria-expanded (not collapsed?)
+                              :on-click #(swap! state update :collapsed-subscription-levels
+                                                toggle-set-member level)}
+                     [:span.level-chevron (if collapsed? "▸" "▾")]
+                     [:span.level-title (str "LEVEL " level)]
+                     [:span.level-count (count nodes)]]
+                    (when-not collapsed?
+                      (into [:div.section-rows]
+                            (map (fn [node]
+                                   ^{:key (:id node)} [node-view context node section])
+                                 nodes)))]))
+               (:levels section)))
            (into [:div.section-rows]
                  (map (fn [node]
                         ^{:key (:id node)} [node-view context node section])
@@ -977,6 +979,80 @@
               sections))
        [:div#empty {:hidden has-selection?} empty-message]]]]))
 
+(defn panel-error-message [error]
+  (let [message (or (some-> error .-message)
+                    (ex-message error)
+                    (when (some? error) (str error)))]
+    (if (str/blank? (str message))
+      "Unknown inspector rendering error"
+      (str message))))
+
+(defn- clear-failed-graph! [{:keys [state]} retry?]
+  (let [failed-revision (:revision @state)]
+    (swap! state assoc
+           :graph nil
+           :sections []
+           :has-selection? false
+           :empty-message select-element-message
+           :status-message (if retry?
+                             "Retrying selected element…"
+                             "Choose another Reagent element.")
+           :failed-revision (when-not retry? failed-revision)
+           :revision (if retry? -1 failed-revision))
+    (reset-app-db-view-state! state)))
+
+(defn- recover-panel-render! [context ^js boundary retry?]
+  (clear-failed-graph! context retry?)
+  (.setState boundary #js {:error nil}))
+
+(defn- panel-error-view [context boundary error]
+  (let [{:keys [on-close]} context]
+    [:div.panel-shell.panel-render-failed
+     [:header
+      [:strong "re-frame.vertica"]
+      [:span#status "The selected element could not be displayed"]
+      [:button#close
+       {:type :button
+        :title "Close panel (Ctrl+Shift+V)"
+        :aria-label "Close panel"
+        :on-click on-close}
+       "×"]]
+     [:main
+      [:section.panel-render-error
+       [:div.panel-render-error-card
+        [:div.panel-render-error-mark "!"]
+        [:div
+         [:h2 "Inspector rendering failed"]
+         [:p "The panel stayed open, but one of the selected element's values could not be rendered."]
+         [:pre (panel-error-message error)]
+         [:div.panel-render-error-actions
+          [:button
+           {:type :button
+            :on-click #(recover-panel-render! context boundary true)}
+           "Retry"]
+          [:button
+           {:type :button
+            :on-click (fn [_]
+                        (recover-panel-render! context boundary false)
+                        (toggle-picker! context))}
+           "Choose another element"]]]]]]]))
+
+(def ^:private panel-error-boundary
+  (r/create-class
+    {:display-name "re-frame.vertica/panel-error-boundary"
+     :get-initial-state (fn [_] #js {:error nil})
+     :get-derived-state-from-error (fn [error] #js {:error error})
+     :component-did-catch
+     (fn [_ error info]
+       (.error js/console "re-frame.vertica panel rendering failed" error info))
+     :render
+     (fn [boundary]
+       (let [context (second (r/argv boundary))
+             error (some-> boundary .-state (.-error))]
+         (if error
+           [panel-error-view context boundary error]
+           [panel-view context])))}))
+
 (defn mount!
   [{:keys [mount-node storage inspected-document inspected-window
            on-close on-detach on-picking-change open-source on-resize-start
@@ -1044,5 +1120,5 @@
                  :state state
                  :render! (fn [graph options] (render! @context* graph options))}]
     (reset! context* context)
-    (rdom/render [panel-view context] mount-node)
+    (rdom/render [panel-error-boundary context] mount-node)
     context))
